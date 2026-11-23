@@ -14,10 +14,10 @@ import io.pcla.app.ui.theme.Ui
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
         // The skin is read before the first frame so the window background and bar icons match it.
         val light = ThemePrefs.isLight(this)
         Ui.apply(light)
-        super.onCreate(savedInstanceState)
         installCrashHandler()
         if (light) {
             enableEdgeToEdge(
