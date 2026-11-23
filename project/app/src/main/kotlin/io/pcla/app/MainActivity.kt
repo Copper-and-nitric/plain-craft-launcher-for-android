@@ -13,8 +13,11 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         installCrashHandler()
-        // the top bar is a blue gradient, so status bar icons must be white; edge-to-edge lets the gradient run under the status bar.
-        enableEdgeToEdge(statusBarStyle = SystemBarStyle.dark(Color.TRANSPARENT))
+        // dark surfaces everywhere: both bars need light icons, and the bottom bar paints its own background
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
+        )
         setContent {
             PclaTheme {
                 PclaApp()

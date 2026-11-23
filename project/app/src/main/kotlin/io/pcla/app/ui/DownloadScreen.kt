@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -31,7 +32,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import io.pcla.app.ui.theme.Pcl
+import io.pcla.app.ui.theme.Ui
 import io.pcla.core.download.DownloadConfig
 import io.pcla.core.download.DownloadOutcome
 import io.pcla.core.download.DownloadQueue
@@ -120,9 +121,12 @@ fun DownloadScreen() {
         Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 14.dp, vertical = 12.dp),
+            .statusBarsPadding()
+            .padding(horizontal = 18.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        Spacer(Modifier.height(2.dp))
+        PageHeader("下载", "多文件队列 · 断点续传 · SHA-1 校验")
         PclCard("下载队列") {
             Text(
                 "一行一个地址，地址后面空一格可以跟 SHA-1。",
@@ -200,13 +204,13 @@ private fun ProgressBar(fraction: Float) {
             .fillMaxWidth()
             .height(6.dp)
             .clip(RoundedCornerShape(3.dp))
-            .background(Pcl.Gray6),
+            .background(Ui.Stroke),
     ) {
         Box(
             Modifier
                 .fillMaxWidth(fraction.coerceIn(0f, 1f))
                 .fillMaxHeight()
-                .background(Pcl.Blue3),
+                .background(Ui.Lime),
         )
     }
 }

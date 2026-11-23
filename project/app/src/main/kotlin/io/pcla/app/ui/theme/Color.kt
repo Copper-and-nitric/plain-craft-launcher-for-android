@@ -3,6 +3,37 @@ package io.pcla.app.ui.theme
 import androidx.compose.ui.graphics.Color
 
 /**
+ * The 2026 dark skin: near-black olive background, lime accent, soft cards.
+ *
+ * Every value here is the one actually used by the UI; Pcl/PclDark below are kept because a few
+ * older screens still reference them, but new code should use [Ui].
+ */
+object Ui {
+    val Bg = Color(0xFF0B0C09)
+    val BgElevated = Color(0xFF10120D)
+    val Surface = Color(0xFF161A12)
+    val SurfaceHigh = Color(0xFF1E2318)
+    val Stroke = Color(0xFF2A3023)
+
+    val Lime = Color(0xFFC6F877)
+    val LimeDeep = Color(0xFFAFE459)
+    val OnLime = Color(0xFF18210A)
+
+    val Text = Color(0xFFF2F5EA)
+    val TextMuted = Color(0xFF9CA395)
+    val TextFaint = Color(0xFF6D7566)
+
+    val Blue = Color(0xFF3F7DF6)
+    val BlueDeep = Color(0xFF255BC4)
+
+    val Orange = Color(0xFFE8873B)
+    val Grass = Color(0xFF6FBE4A)
+    val Sand = Color(0xFFD9C7A3)
+    val Purple = Color(0xFF8E63F2)
+    val Red = Color(0xFFFF7A6B)
+}
+
+/**
  * Taken from PCL's `Plain Craft Launcher 2/Application.xaml` lines 22-65,
  * i.e. the original values of `ColorObject1`-`ColorObject8` and `ColorObjectGray1`-`Gray8`.
  * No "close enough" invented colors: next to the originals, an invented blue turns grey.

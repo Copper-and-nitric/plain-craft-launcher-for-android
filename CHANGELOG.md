@@ -7,6 +7,18 @@ All entries are bilingual: Chinese first, then English.
 
 ---
 
+## [Unreleased] — 2026-11-22
+
+### 变更 / Changed
+
+- **界面重做**：深色底 + 荧光绿主色、底部四栏（启动 / 版本 / 下载 / 设置）、版本英雄卡、最近版本列表、实测数据条与推荐卡；体检/降级并入「版本」「设置」页。
+  **New UI**: dark surface with lime accent, four-tab bottom bar (Home / Versions / Downloads / Settings), hero version card, recent list, measured stats strip; device check and degrade advisor moved into Versions/Settings.
+
+- **图标包**：接入 IconKitchen 生成的 adaptive icon（mipmap + monochrome），应用内标题使用同一枚 logo。
+  **Icon pack**: IconKitchen adaptive icon (mipmap + monochrome) wired into the manifest and reused as the in-app logo.
+
+---
+
 ## [0.2.0-alpha] — 2026-10-26
 
 ### 新增 / Added

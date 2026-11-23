@@ -1,6 +1,5 @@
 package io.pcla.app.ui.theme
 
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
@@ -14,57 +13,56 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-private val LightColors = lightColorScheme(
-    primary = Pcl.Blue3,
-    onPrimary = Color.White,
-    primaryContainer = Pcl.Blue7,
-    onPrimaryContainer = Pcl.Blue2,
-    secondary = Pcl.Blue4,
-    onSecondary = Color.White,
-    secondaryContainer = Pcl.Blue8,
-    onSecondaryContainer = Pcl.Blue2,
-    tertiary = Pcl.Blue5,
-    background = Pcl.Gray8,
-    onBackground = Pcl.Blue1,
-    surface = Color.White,
-    onSurface = Pcl.Blue1,
-    surfaceVariant = Pcl.Blue8,
-    onSurfaceVariant = Pcl.Gray2,
-    outline = Pcl.Gray5,
-    outlineVariant = Pcl.Gray6,
-    error = Pcl.RedLight,
-    onError = Color.White,
-    errorContainer = Pcl.RedBack,
-    onErrorContainer = Pcl.RedDark,
-)
-
+/**
+ * The launcher is designed dark-first: the near-black surface makes the lime accent readable and
+ * the per-version cube colors pop. Light scheme exists only so the app does not look broken under
+ * forced-light OEM modes, but the default is always the dark one.
+ */
 private val DarkColors = darkColorScheme(
-    primary = PclDark.Blue3,
-    onPrimary = Color(0xFF04203F),
-    primaryContainer = PclDark.Blue8,
-    onPrimaryContainer = Color(0xFFCFE3FF),
-    secondary = PclDark.Blue2,
-    onSecondary = Color.White,
-    secondaryContainer = PclDark.Blue8,
-    onSecondaryContainer = Color(0xFFCFE3FF),
-    tertiary = PclDark.Blue3,
-    background = PclDark.Gray8,
-    onBackground = PclDark.Text,
-    surface = PclDark.Surface,
-    onSurface = PclDark.Text,
-    surfaceVariant = PclDark.SurfaceHigh,
-    onSurfaceVariant = PclDark.TextMuted,
-    outline = PclDark.Outline,
-    outlineVariant = PclDark.Outline,
-    error = Color(0xFFFF8A80),
-    onError = Color(0xFF3B0908),
-    errorContainer = Color(0xFF5C1A16),
-    onErrorContainer = Color(0xFFFFDAD5),
+    primary = Ui.Lime,
+    onPrimary = Ui.OnLime,
+    primaryContainer = Ui.SurfaceHigh,
+    onPrimaryContainer = Ui.Lime,
+    secondary = Ui.Grass,
+    onSecondary = Color(0xFF0C1505),
+    secondaryContainer = Ui.SurfaceHigh,
+    onSecondaryContainer = Ui.Text,
+    tertiary = Ui.Purple,
+    onTertiary = Color.White,
+    background = Ui.Bg,
+    onBackground = Ui.Text,
+    surface = Ui.Surface,
+    onSurface = Ui.Text,
+    surfaceVariant = Ui.SurfaceHigh,
+    onSurfaceVariant = Ui.TextMuted,
+    outline = Ui.Stroke,
+    outlineVariant = Ui.Stroke,
+    error = Ui.Red,
+    onError = Color(0xFF2B0603),
+    errorContainer = Color(0xFF3A1510),
+    onErrorContainer = Ui.Red,
+    scrim = Color.Black,
 )
 
-/** PCL body text is fixed at 13px, titles 15, captions 11. Copied as-is instead of Material's default 16/14. */
+private val LightColors = lightColorScheme(
+    primary = Color(0xFF4F7A18),
+    onPrimary = Color.White,
+    background = Color(0xFFF7F8F3),
+    onBackground = Color(0xFF14170F),
+    surface = Color.White,
+    onSurface = Color(0xFF14170F),
+    surfaceVariant = Color(0xFFEDF0E4),
+    onSurfaceVariant = Color(0xFF5A6152),
+    outline = Color(0xFFD8DDCC),
+    outlineVariant = Color(0xFFE4E8D8),
+)
+
+/** One type scale for the whole app: headline 26, card title 16, body 13, caption 11. */
 private val PclTypography = Typography(
-    titleLarge = TextStyle(fontSize = 20.sp, fontWeight = FontWeight.Medium, lineHeight = 26.sp),
+    headlineLarge = TextStyle(fontSize = 28.sp, fontWeight = FontWeight.SemiBold, lineHeight = 34.sp),
+    headlineMedium = TextStyle(fontSize = 24.sp, fontWeight = FontWeight.SemiBold, lineHeight = 30.sp),
+    headlineSmall = TextStyle(fontSize = 20.sp, fontWeight = FontWeight.SemiBold, lineHeight = 26.sp),
+    titleLarge = TextStyle(fontSize = 18.sp, fontWeight = FontWeight.SemiBold, lineHeight = 24.sp),
     titleMedium = TextStyle(fontSize = 15.sp, fontWeight = FontWeight.Medium, lineHeight = 21.sp),
     titleSmall = TextStyle(fontSize = 13.sp, fontWeight = FontWeight.Medium, lineHeight = 18.sp),
     bodyLarge = TextStyle(fontSize = 15.sp, lineHeight = 22.sp),
@@ -75,18 +73,18 @@ private val PclTypography = Typography(
     labelSmall = TextStyle(fontSize = 11.sp),
 )
 
-/** Corners match PCL: buttons 3, cards 6, pills 13.5 (rounded to 14). */
+/** Cards 22, inner tiles 14, buttons pill. */
 private val PclShapes = Shapes(
-    extraSmall = RoundedCornerShape(3.dp),
-    small = RoundedCornerShape(3.dp),
-    medium = RoundedCornerShape(6.dp),
-    large = RoundedCornerShape(6.dp),
-    extraLarge = RoundedCornerShape(14.dp),
+    extraSmall = RoundedCornerShape(8.dp),
+    small = RoundedCornerShape(12.dp),
+    medium = RoundedCornerShape(18.dp),
+    large = RoundedCornerShape(22.dp),
+    extraLarge = RoundedCornerShape(28.dp),
 )
 
 @Composable
 fun PclaTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
+    darkTheme: Boolean = true,
     content: @Composable () -> Unit,
 ) {
     MaterialTheme(

@@ -1,8 +1,8 @@
 package io.pcla.app.ui
 
-import io.pcla.app.BuildConfig
-
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,9 +13,15 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.material3.MaterialTheme
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -25,16 +31,23 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import io.pcla.app.ui.theme.Pcl
+import io.pcla.app.R
+import io.pcla.app.ui.theme.Ui
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
+/**
+ * Four tabs, bottom bar: 启动 / 版本 / 下载 / 设置.
+ *
+ * One probe result ([Report]) is shared by all tabs — probing per tab would give two different
+ * heap ceilings on the same screen pair.
+ */
 @Composable
 fun PclaApp() {
     val context = LocalContext.current
@@ -53,73 +66,117 @@ fun PclaApp() {
         }
     }
 
-    Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-        PclTopBar(tab) { tab = it }
-        val msg = error
+    Column(Modifier.fillMaxSize().background(Ui.Bg)) {
         Box(
             Modifier
                 .weight(1f)
-                .fillMaxWidth()
-                .navigationBarsPadding(),
+                .fillMaxWidth(),
         ) {
+            val message = error
             val r = report
             when {
-                msg != null -> CenteredMessage("设备探测失败：$msg") { reload++ }
-                r == null -> CenteredMessage("正在读取 GPU 与内存…", null)
-                tab == 0 -> HomeScreen(r) { reload++ }
-                tab == 1 -> DegradeScreen(r.spec, r.profile)
-                tab == 2 -> DownloadScreen()
-                else -> LaunchScreen(r.configs[r.recommendation.version]?.heapMb ?: 2048)
+                message != null -> CenteredMessage("设备探测失败：$message") { reload++ }
+                r == null -> LoadingView()
+                else -> when (tab) {
+                    0 -> HomeScreen(r, onOpenVersions = { tab = 1 })
+                    1 -> VersionsScreen(r, onReload = { reload++ })
+                    2 -> DownloadScreen()
+                    else -> SettingsScreen(r, onReload = { reload++ })
+                }
+            }
+        }
+        PclaBottomBar(tab) { tab = it }
+    }
+}
+
+@Composable
+private fun PclaBottomBar(tab: Int, onTab: (Int) -> Unit) {
+    val items = listOf(
+        Triple("启动", Icons.Filled.Home, 0),
+        Triple("版本", Icons.Filled.List, 1),
+        Triple("下载", Icons.Filled.KeyboardArrowDown, 2),
+        Triple("设置", Icons.Filled.Settings, 3),
+    )
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .background(Ui.BgElevated)
+            .navigationBarsPadding(),
+    ) {
+        Box(Modifier.fillMaxWidth().height(1.dp).background(Ui.Stroke))
+        Row(Modifier.fillMaxWidth().height(64.dp)) {
+            items.forEach { (label, icon, index) ->
+                BottomItem(
+                    label = label,
+                    icon = icon,
+                    selected = tab == index,
+                    modifier = Modifier.weight(1f),
+                    onClick = { onTab(index) },
+                )
             }
         }
     }
 }
 
-/** 48px blue-gradient top bar; navigation is PCL's row of 27px-high white pill tabs — not a drawer, not a bottom bar. */
 @Composable
-private fun PclTopBar(tab: Int, onTab: (Int) -> Unit) {
+private fun BottomItem(
+    label: String,
+    icon: ImageVector,
+    selected: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    val color = if (selected) Ui.Lime else Ui.TextFaint
     Column(
-        Modifier
-            .fillMaxWidth()
-            .background(Brush.linearGradient(listOf(Pcl.Blue4, Pcl.Blue3)))
-            .statusBarsPadding(),
+        modifier
+            .clickable(onClick = onClick)
+            .padding(vertical = 9.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
     ) {
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .height(48.dp)
-                .padding(horizontal = 14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            // PCL's logo is outlined white letters; substitute white text at the same weight instead of faking a Path
-            Text("PCL", color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
-            Spacer(Modifier.width(13.dp))
-            PclTab("体检", selected = tab == 0) { onTab(0) }
-            Spacer(Modifier.width(5.dp))
-            PclTab("降级", selected = tab == 1) { onTab(1) }
-            Spacer(Modifier.width(5.dp))
-            PclTab("下载", selected = tab == 2) { onTab(2) }
-            Spacer(Modifier.width(5.dp))
-            PclTab("启动", selected = tab == 3) { onTab(3) }
-            Spacer(Modifier.weight(1f))
-            Text(BuildConfig.VERSION_NAME, color = Color.White.copy(alpha = 0.8f), fontSize = 11.sp)
-        }
+        Icon(icon, contentDescription = label, tint = color, modifier = Modifier.size(22.dp))
+        Spacer(Modifier.height(4.dp))
+        Text(
+            label,
+            fontSize = 10.sp,
+            color = color,
+            fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal,
+        )
     }
 }
 
 @Composable
-private fun CenteredMessage(text: String, onRetry: (() -> Unit)?) {
+private fun LoadingView() {
     Column(
-        Modifier
-            .fillMaxSize()
-            .padding(32.dp),
+        Modifier.fillMaxSize().padding(32.dp),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text(text, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        if (onRetry != null) {
-            Spacer(Modifier.height(16.dp))
-            PclButton("重试", onClick = onRetry, modifier = Modifier.width(160.dp), height = 40)
-        }
+        Image(
+            painter = painterResource(R.drawable.app_logo),
+            contentDescription = null,
+            modifier = Modifier.size(58.dp),
+        )
+        Spacer(Modifier.height(20.dp))
+        CircularProgressIndicator(
+            color = Ui.Lime,
+            strokeWidth = 2.dp,
+            modifier = Modifier.size(22.dp),
+        )
+        Spacer(Modifier.height(14.dp))
+        Text("正在读取 GPU 与内存…", fontSize = 11.sp, color = Ui.TextMuted)
+    }
+}
+
+@Composable
+private fun CenteredMessage(text: String, onRetry: () -> Unit) {
+    Column(
+        Modifier.fillMaxSize().padding(32.dp),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(text, fontSize = 13.sp, color = Ui.TextMuted)
+        Spacer(Modifier.height(16.dp))
+        PclButton("重试", onClick = onRetry, modifier = Modifier.width(160.dp), height = 44)
     }
 }
