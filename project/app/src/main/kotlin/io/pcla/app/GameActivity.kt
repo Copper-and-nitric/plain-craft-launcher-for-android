@@ -74,12 +74,17 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         val heapMb = intent.getIntExtra(EXTRA_HEAP, 2048)
         val f = holder.surfaceFrame
         log("Surface 已创建 ${f.width()}x${f.height()}")
-        log("native 入口：${SurfaceBridge.describe()}")
         // the JVM runs until the game exits, so this whole block goes on a worker thread;
         // this Activity's UI thread only displays status.
         Thread({
             try {
+                // libfcl 必须在 libpojavexec 之前加载：pojavexec 的 JNI_OnLoad 会用到 fcl 的表，
+                // 而 setupBridgeWindow 又依赖 JNI_OnLoad 初始化好的 pojav_environ。
+                LaunchLog.append(this, "Game: 开始加载原生库")
+                NativeBootstrap.loadLibs().forEach { LaunchLog.append(this, "Game: 原生库 $it") }
+                LaunchLog.append(this, "Game: attach begin")
                 val err = SurfaceBridge.attach(holder.surface)
+                LaunchLog.append(this, "Game: attach " + (err ?: "ok"))
                 if (err != null) {
                     runOnUiThread { log("✗ Surface 交接失败：$err") }
                     return@Thread

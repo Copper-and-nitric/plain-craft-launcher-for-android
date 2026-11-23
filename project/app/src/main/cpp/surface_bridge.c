@@ -28,13 +28,21 @@ static void *open_bridge(void) {
     return h;
 }
 
-// Returns 0 = success; -1 = dlopen failed; -2 = symbol not found.
+// Returns 0 = success; -1 = dlopen failed; -2 = symbol not found;
+// -4 = pojav_environ is NULL, i.e. JNI_OnLoad never ran on this copy of the library.
+// That last check is what stops a SILENT native crash: setupBridgeWindow dereferences
+// pojav_environ before doing anything else, so calling it too early is a SIGSEGV.
 JNIEXPORT jint JNICALL
 Java_io_pcla_app_SurfaceBridge_install(JNIEnv *env, jclass clazz, jobject surface) {
     (void) clazz;
     if (surface == NULL) return -3;
     void *h = open_bridge();
     if (!h) return -1;
+    void **environ_ptr = (void **) dlsym(h, "pojav_environ");
+    if (environ_ptr == NULL || *environ_ptr == NULL) {
+        LOGI("pojav_environ 还是 NULL，拒绝调用 setupBridgeWindow（否则会 SIGSEGV）");
+        return -4;
+    }
     for (unsigned i = 0; i < sizeof(SYMS) / sizeof(SYMS[0]); i++) {
         bridge_fn fn = (bridge_fn) dlsym(h, SYMS[i]);
         if (!fn) continue;

@@ -29,28 +29,22 @@ object SurfaceBridge {
      * the AGP version and build order (CI #44 died on `Unresolved reference: lwjgl`); reflection
      * only needs the class at runtime, zero compile-time coupling, and dlsym still backstops it.
      */
-    private fun directAttach(surface: Surface): Throwable? = try {
-        val cls = Class.forName("org.lwjgl.glfw.CallbackBridge")
-        cls.getMethod("setupBridgeWindow", Any::class.java).invoke(null, surface)
-        null
-    } catch (t: java.lang.reflect.InvocationTargetException) {
-        t.cause ?: t
-    } catch (t: Throwable) {
-        t
-    }
-
-    /** null means success; otherwise a Chinese-language reason. */
+    /**
+     * null means success; otherwise a Chinese-language reason.
+     *
+     * Always goes through the C guard: the native side checks `pojav_environ` before calling
+     * setupBridgeWindow, so "library loaded but JNI_OnLoad never ran" becomes a readable error
+     * instead of a SIGSEGV that takes the whole :game process down.
+     */
     fun attach(surface: Surface): String? {
-        val direct = directAttach(surface)
-        if (direct == null) return null
-        // fallback: dlopen + dlsym
         return when (val r = runCatching { install(surface) }.getOrElse { -99 }) {
             0 -> null
-            -1 -> "两条路都失败：${direct.message}；dlopen libpojavexec.so 也失败"
-            -2 -> "两条路都失败：${direct.message}；so 里没有 Surface 入口"
+            -1 -> "dlopen libpojavexec.so 失败（原生库没打包进来？）"
+            -2 -> "libpojavexec.so 里没有 Surface 入口"
             -3 -> "Surface 还没准备好"
+            -4 -> "pojav_environ 还是 NULL：JNI_OnLoad 没跑到，已拦截（不会再闪退）"
             -99 -> "调用 native 时崩了，见 logcat（tag PclaSurface）"
-            else -> "两条路都失败：${direct.message}；dlopen 返回 $r"
+            else -> "dlopen 返回 $r"
         }
     }
 }
