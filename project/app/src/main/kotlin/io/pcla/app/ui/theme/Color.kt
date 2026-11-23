@@ -3,45 +3,131 @@ package io.pcla.app.ui.theme
 import androidx.compose.ui.graphics.Color
 
 /**
- * The 2026 dark skin: near-black olive background, lime accent, soft cards.
+ * The whole app reads its chrome colors from this singleton, which keeps two complete skins:
  *
- * Every value here is the one actually used by the UI; Pcl/PclDark below are kept because a few
- * older screens still reference them, but new code should use [Ui].
+ * - `apply(false)` — the 2026 dark skin: near-black olive + lime accent.
+ * - `apply(true)`  — PCL's own palette: blue accent on light gray, white cards (ColorObject1-8).
+ *
+ * Switching a theme calls [apply] and then recreates the Activity; that is why the fields are
+ * `var` instead of immutable. Cube colors below stay fixed: Minecraft blocks look the same in
+ * both skins.
  */
 object Ui {
-    val Bg = Color(0xFF0B0C09)
-    val BgElevated = Color(0xFF10120D)
-    val Surface = Color(0xFF161A12)
-    val SurfaceHigh = Color(0xFF1E2318)
-    val Stroke = Color(0xFF2A3023)
+    var isDark: Boolean = true
+        private set
 
-    val Lime = Color(0xFFC6F877)
-    val LimeDeep = Color(0xFFAFE459)
-    val OnLime = Color(0xFF18210A)
+    var Bg = Color(0xFF0B0C09)
+        private set
+    var BgElevated = Color(0xFF10120D)
+        private set
+    var Surface = Color(0xFF161A12)
+        private set
+    var SurfaceHigh = Color(0xFF1E2318)
+        private set
+    var Stroke = Color(0xFF2A3023)
+        private set
 
-    val Text = Color(0xFFF2F5EA)
-    val TextMuted = Color(0xFF9CA395)
-    val TextFaint = Color(0xFF6D7566)
+    /** Primary accent. Lime in the dark skin, PCL blue (#1370F3) in the light one. */
+    var Lime = Color(0xFFC6F877)
+        private set
+    var LimeDeep = Color(0xFFAFE459)
+        private set
+    var OnLime = Color(0xFF18210A)
+        private set
 
+    var Text = Color(0xFFF2F5EA)
+        private set
+    var TextMuted = Color(0xFF9CA395)
+        private set
+    var TextFaint = Color(0xFF6D7566)
+        private set
+
+    var HeroTop = Color(0xFF1C2216)
+        private set
+    var HeroBottom = Color(0xFF111309)
+        private set
+    var HeroBorder = Color(0xFF2A3023)
+        private set
+
+    var RecoTop = Color(0xFF2A1F45)
+        private set
+    var RecoBottom = Color(0xFF15121F)
+        private set
+    var RecoBorder = Color(0xFF3B2C5E)
+        private set
+
+    var Red = Color(0xFFFF7A6B)
+        private set
+
+    // Fixed across themes.
     val Blue = Color(0xFF3F7DF6)
     val BlueDeep = Color(0xFF255BC4)
-
     val Orange = Color(0xFFE8873B)
     val Grass = Color(0xFF6FBE4A)
     val Sand = Color(0xFFD9C7A3)
     val Purple = Color(0xFF8E63F2)
-    val Red = Color(0xFFFF7A6B)
+
+    /** Swatches for the Settings theme picker; these must not change when the skin changes. */
+    val GreenPaletteLime = Color(0xFFC6F877)
+    val PclPaletteBlue = Color(0xFF1370F3)
+
+    init {
+        apply(light = false)
+    }
+
+    fun apply(light: Boolean) {
+        isDark = !light
+        if (light) {
+            // PCL 原版色板：Application.xaml 的 ColorObject1/3/7/8 与 Gray1-6
+            Bg = Color(0xFFF5F5F5)
+            BgElevated = Color(0xFFFFFFFF)
+            Surface = Color(0xFFFFFFFF)
+            SurfaceHigh = Color(0xFFEAF2FE)
+            Stroke = Color(0xFFD5E6FD)
+            Lime = Color(0xFF1370F3)
+            LimeDeep = Color(0xFF0B5BCB)
+            OnLime = Color(0xFFFFFFFF)
+            Text = Color(0xFF343D4A)
+            TextMuted = Color(0xFF737373)
+            TextFaint = Color(0xFF8C8C8C)
+            HeroTop = Color(0xFFFFFFFF)
+            HeroBottom = Color(0xFFEAF2FE)
+            HeroBorder = Color(0xFFD5E6FD)
+            RecoTop = Color(0xFFE0EAFD)
+            RecoBottom = Color(0xFFF5F5F5)
+            RecoBorder = Color(0xFF96C0F9)
+            Red = Color(0xFFCE2111)
+        } else {
+            Bg = Color(0xFF0B0C09)
+            BgElevated = Color(0xFF10120D)
+            Surface = Color(0xFF161A12)
+            SurfaceHigh = Color(0xFF1E2318)
+            Stroke = Color(0xFF2A3023)
+            Lime = Color(0xFFC6F877)
+            LimeDeep = Color(0xFFAFE459)
+            OnLime = Color(0xFF18210A)
+            Text = Color(0xFFF2F5EA)
+            TextMuted = Color(0xFF9CA395)
+            TextFaint = Color(0xFF6D7566)
+            HeroTop = Color(0xFF1C2216)
+            HeroBottom = Color(0xFF111309)
+            HeroBorder = Color(0xFF2A3023)
+            RecoTop = Color(0xFF2A1F45)
+            RecoBottom = Color(0xFF15121F)
+            RecoBorder = Color(0xFF3B2C5E)
+            Red = Color(0xFFFF7A6B)
+        }
+    }
 }
 
 /**
- * Taken from PCL's `Plain Craft Launcher 2/Application.xaml` lines 22-65,
- * i.e. the original values of `ColorObject1`-`ColorObject8` and `ColorObjectGray1`-`Gray8`.
- * No "close enough" invented colors: next to the originals, an invented blue turns grey.
+ * PCL's original palette, kept for the light skin's documentation. The live values are in [Ui]
+ * after `apply(true)`; this object is not read by the UI.
  */
 object Pcl {
-    val Blue1 = Color(0xFF343D4A) // PCL calls this Color1: the body text color (dark slate), not a blue
+    val Blue1 = Color(0xFF343D4A)
     val Blue2 = Color(0xFF0B5BCB)
-    val Blue3 = Color(0xFF1370F3) // primary color
+    val Blue3 = Color(0xFF1370F3)
     val Blue4 = Color(0xFF4890F5)
     val Blue5 = Color(0xFF96C0F9)
     val Blue6 = Color(0xFFD5E6FD)
@@ -62,7 +148,6 @@ object Pcl {
     val RedBack = Color(0x80FBDDDD)
 }
 
-/** The dark scheme is derived by darkening PCL's hues (PCL's dark values live in code, not in the XAML). */
 object PclDark {
     val Blue2 = Color(0xFF1370F3)
     val Blue3 = Color(0xFF4890F5)

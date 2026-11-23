@@ -30,6 +30,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        LaunchLog.append(this, "GameActivity onCreate")
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         window.decorView.systemUiVisibility = (
             View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
@@ -62,6 +63,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
 
     private fun log(line: String) {
         status.text = "PCLA 游戏窗口\n" + line
+        LaunchLog.append(this, "Game: $line")
         android.util.Log.i("PCLA-Game", line)
     }
 
@@ -72,6 +74,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         val heapMb = intent.getIntExtra(EXTRA_HEAP, 2048)
         val f = holder.surfaceFrame
         log("Surface 已创建 ${f.width()}x${f.height()}")
+        log("native 入口：${SurfaceBridge.describe()}")
         // the JVM runs until the game exits, so this whole block goes on a worker thread;
         // this Activity's UI thread only displays status.
         Thread({
@@ -87,10 +90,12 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
                     log("Java ${installed.javaMajor}，主类 ${installed.plan.mainClass}\n开始启动 JVM…")
                 }
                 val code = InProcessLauncher.launch(this, installed, heapMb) { line ->
+                    LaunchLog.append(this, "JVM $line")
                     runOnUiThread { status.append("\n" + line.take(90)) }
                 }
                 runOnUiThread { log("launchJVM 返回 $code") }
             } catch (t: Throwable) {
+                LaunchLog.append(this, "Game 失败：" + (t.message ?: t.javaClass.simpleName))
                 runOnUiThread { log("✗ 失败：" + (t.message ?: t.javaClass.simpleName)) }
             }
         }, "pcla-jvm").start()
@@ -101,7 +106,13 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
     }
 
     override fun surfaceDestroyed(holder: SurfaceHolder) {
+        LaunchLog.append(this, "Game: surfaceDestroyed")
         android.util.Log.i("PCLA-Game", "surfaceDestroyed")
+    }
+
+    override fun onDestroy() {
+        LaunchLog.append(this, "GameActivity onDestroy")
+        super.onDestroy()
     }
 
     companion object {

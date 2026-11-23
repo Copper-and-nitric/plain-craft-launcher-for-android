@@ -175,17 +175,17 @@ fun PclCode(text: String, modifier: Modifier = Modifier) {
     }
 }
 
-/** Baseline row height used by the recent-version list. */
+/** Baseline row used by task lists; a real Row so `Modifier.weight` inside means what it says. */
 @Composable
 fun PclRow(
     modifier: Modifier = Modifier,
-    content: @Composable () -> Unit,
+    content: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit,
 ) {
-    Box(
+    Row(
         modifier
             .fillMaxWidth()
             .height(56.dp),
-        contentAlignment = Alignment.CenterStart,
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         content()
     }

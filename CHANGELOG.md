@@ -17,6 +17,22 @@ All entries are bilingual: Chinese first, then English.
 - **图标包**：接入 IconKitchen 生成的 adaptive icon（mipmap + monochrome），应用内标题使用同一枚 logo。
   **Icon pack**: IconKitchen adaptive icon (mipmap + monochrome) wired into the manifest and reused as the in-app logo.
 
+### 新增 / Added
+
+- **双主题**：设置里可切换「荧光绿 · 暗色」与「PCL · 蓝白」（#1370F3 + 浅灰底），状态栏、卡片、按钮一起换。
+  **Two skins**: Settings switches between the lime-dark skin and PCL's blue-on-light palette, including bars and cards.
+
+- **FCL 式下载页**：分类（游戏 / 整合包 / 模组 / 资源包 / 光影 / 链接）、版本搜索、正式版/快照筛选、分页列表；「游戏」分类直接读版本清单并安装，原直链队列收进「链接」。
+  **FCL-style downloads**: categories, search, release/snapshot filter and a paged list; the 游戏 tab installs straight from the version manifest, the old URL queue moved under 链接.
+
+### 修复 / Fixed
+
+- **启动闪退隔离**：`GameActivity` 移到独立 `:game` 进程，原生层崩了只会带回启动器，不再整 App 闪退；新增「设置 → 启动日志」，记录 Surface / JVM 每一步。
+  **Crash isolation**: GameActivity now runs in `:game`; a native crash no longer takes the launcher down, and Settings → Launch log records each Surface/JVM step.
+
+- `PclRow` 改成真正的 `Row`，任务列表里的 `weight` 不再被当成 Column 的权重。
+  **PclRow** is a real Row now, so `weight` inside task rows behaves.
+
 ---
 
 ## [0.2.0-alpha] — 2026-10-26

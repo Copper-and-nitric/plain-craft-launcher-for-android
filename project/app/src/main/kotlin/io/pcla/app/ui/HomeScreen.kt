@@ -47,6 +47,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.pcla.app.GameActivity
 import io.pcla.app.GameInstaller
+import io.pcla.app.LaunchLog
 import io.pcla.app.R
 import io.pcla.app.ui.theme.Ui
 import io.pcla.core.launch.JavaPolicy
@@ -83,12 +84,14 @@ internal fun HomeScreen(report: Report, onOpenVersions: () -> Unit) {
         if (busy) return
         busy = true
         stage = "检查本地文件…"
+        LaunchLog.append(context, "tap 启动 $v (heap=${h}MB)")
         scope.launch {
             runCatching {
                 val installed = withContext(Dispatchers.IO) {
                     runCatching { GameInstaller.assemble(context, v) }.getOrNull()
                 } ?: run {
                     stage = "开始下载 $v…"
+                    LaunchLog.append(context, "本地未安装 $v，开始下载")
                     withContext(Dispatchers.IO) {
                         GameInstaller.install(context, v, h) { p ->
                             stage = buildString {
@@ -99,7 +102,9 @@ internal fun HomeScreen(report: Report, onOpenVersions: () -> Unit) {
                     }
                 }
                 if (v == version) ready = true
+                LaunchLog.append(context, "安装完成 $v")
                 stage = "打开游戏窗口…"
+                LaunchLog.append(context, "startActivity GameActivity $v")
                 context.startActivity(
                     Intent(context, GameActivity::class.java)
                         .putExtra(GameActivity.EXTRA_VERSION, installed.versionId)
@@ -107,7 +112,9 @@ internal fun HomeScreen(report: Report, onOpenVersions: () -> Unit) {
                 )
                 stage = ""
             }.onFailure {
-                stage = "失败：" + (it.message ?: it.javaClass.simpleName)
+                val why = it.message ?: it.javaClass.simpleName
+                stage = "失败：$why"
+                LaunchLog.append(context, "启动准备失败：$why")
             }
             busy = false
         }
@@ -229,8 +236,8 @@ private fun HeroCard(
         Modifier
             .fillMaxWidth()
             .clip(shape)
-            .background(Brush.linearGradient(listOf(Color(0xFF1C2216), Color(0xFF111309))))
-            .border(1.dp, Ui.Stroke, shape)
+            .background(Brush.linearGradient(listOf(Ui.HeroTop, Ui.HeroBottom)))
+            .border(1.dp, Ui.HeroBorder, shape)
             .padding(16.dp),
     ) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -353,8 +360,8 @@ private fun RecommendCard(title: String, onClick: () -> Unit) {
         Modifier
             .fillMaxWidth()
             .clip(shape)
-            .background(Brush.linearGradient(listOf(Color(0xFF2A1F45), Color(0xFF15121F))))
-            .border(1.dp, Color(0xFF3B2C5E), shape)
+            .background(Brush.linearGradient(listOf(Ui.RecoTop, Ui.RecoBottom)))
+            .border(1.dp, Ui.RecoBorder, shape)
             .clickable(onClick = onClick)
             .padding(14.dp),
         verticalAlignment = Alignment.CenterVertically,

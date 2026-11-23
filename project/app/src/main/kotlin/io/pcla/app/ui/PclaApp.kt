@@ -80,7 +80,9 @@ fun PclaApp() {
                 else -> when (tab) {
                     0 -> HomeScreen(r, onOpenVersions = { tab = 1 })
                     1 -> VersionsScreen(r, onReload = { reload++ })
-                    2 -> DownloadScreen()
+                    2 -> DownloadScreen(
+                        heapMb = r.configs[r.recommendation.version]?.heapMb ?: r.profile.heapSweetMb,
+                    )
                     else -> SettingsScreen(r, onReload = { reload++ })
                 }
             }

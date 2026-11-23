@@ -1,6 +1,7 @@
 package io.pcla.app
 
 import android.graphics.Color
+import android.graphics.drawable.ColorDrawable
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
@@ -8,16 +9,29 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import io.pcla.app.ui.PclaApp
 import io.pcla.app.ui.theme.PclaTheme
+import io.pcla.app.ui.theme.ThemePrefs
+import io.pcla.app.ui.theme.Ui
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
+        // The skin is read before the first frame so the window background and bar icons match it.
+        val light = ThemePrefs.isLight(this)
+        Ui.apply(light)
         super.onCreate(savedInstanceState)
         installCrashHandler()
-        // dark surfaces everywhere: both bars need light icons, and the bottom bar paints its own background
-        enableEdgeToEdge(
-            statusBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
-            navigationBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
-        )
+        if (light) {
+            enableEdgeToEdge(
+                statusBarStyle = SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT),
+                navigationBarStyle = SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT),
+            )
+            window.setBackgroundDrawable(ColorDrawable(0xFFF5F5F5.toInt()))
+        } else {
+            enableEdgeToEdge(
+                statusBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
+                navigationBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
+            )
+            window.setBackgroundDrawable(ColorDrawable(0xFF0B0C09.toInt()))
+        }
         setContent {
             PclaTheme {
                 PclaApp()
@@ -33,6 +47,7 @@ class MainActivity : ComponentActivity() {
     private fun installCrashHandler() {
         val previous = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, error ->
+            LaunchLog.append(this, "CRASH ${thread.name}: $error")
             runCatching {
                 val dir = getExternalFilesDir("crash") ?: filesDir
                 dir.mkdirs()

@@ -14,11 +14,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 /**
- * The launcher is designed dark-first: the near-black surface makes the lime accent readable and
- * the per-version cube colors pop. Light scheme exists only so the app does not look broken under
- * forced-light OEM modes, but the default is always the dark one.
+ * Material colors are derived from [Ui] on every call, so switching skins only needs
+ * `Ui.apply(...)` + Activity recreate — no per-composable palette plumbing.
  */
-private val DarkColors = darkColorScheme(
+private fun darkScheme() = darkColorScheme(
     primary = Ui.Lime,
     onPrimary = Ui.OnLime,
     primaryContainer = Ui.SurfaceHigh,
@@ -44,17 +43,30 @@ private val DarkColors = darkColorScheme(
     scrim = Color.Black,
 )
 
-private val LightColors = lightColorScheme(
-    primary = Color(0xFF4F7A18),
-    onPrimary = Color.White,
-    background = Color(0xFFF7F8F3),
-    onBackground = Color(0xFF14170F),
-    surface = Color.White,
-    onSurface = Color(0xFF14170F),
-    surfaceVariant = Color(0xFFEDF0E4),
-    onSurfaceVariant = Color(0xFF5A6152),
-    outline = Color(0xFFD8DDCC),
-    outlineVariant = Color(0xFFE4E8D8),
+private fun lightScheme() = lightColorScheme(
+    primary = Ui.Lime,
+    onPrimary = Ui.OnLime,
+    primaryContainer = Ui.SurfaceHigh,
+    onPrimaryContainer = Ui.LimeDeep,
+    secondary = Ui.LimeDeep,
+    onSecondary = Color.White,
+    secondaryContainer = Ui.SurfaceHigh,
+    onSecondaryContainer = Ui.Text,
+    tertiary = Ui.Purple,
+    onTertiary = Color.White,
+    background = Ui.Bg,
+    onBackground = Ui.Text,
+    surface = Ui.Surface,
+    onSurface = Ui.Text,
+    surfaceVariant = Ui.SurfaceHigh,
+    onSurfaceVariant = Ui.TextMuted,
+    outline = Ui.Stroke,
+    outlineVariant = Ui.Stroke,
+    error = Ui.Red,
+    onError = Color.White,
+    errorContainer = Color(0xFFFBDDDD),
+    onErrorContainer = Ui.Red,
+    scrim = Color.Black,
 )
 
 /** One type scale for the whole app: headline 26, card title 16, body 13, caption 11. */
@@ -84,11 +96,11 @@ private val PclShapes = Shapes(
 
 @Composable
 fun PclaTheme(
-    darkTheme: Boolean = true,
+    darkTheme: Boolean = Ui.isDark,
     content: @Composable () -> Unit,
 ) {
     MaterialTheme(
-        colorScheme = if (darkTheme) DarkColors else LightColors,
+        colorScheme = if (darkTheme) darkScheme() else lightScheme(),
         typography = PclTypography,
         shapes = PclShapes,
         content = content,

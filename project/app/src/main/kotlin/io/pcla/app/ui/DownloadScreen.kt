@@ -3,6 +3,9 @@ package io.pcla.app.ui
 import android.os.Handler
 import android.os.Looper
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,6 +17,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -21,38 +25,309 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import io.pcla.app.GameInstaller
 import io.pcla.app.ui.theme.Ui
 import io.pcla.core.download.DownloadConfig
-import io.pcla.core.download.DownloadOutcome
 import io.pcla.core.download.DownloadQueue
 import io.pcla.core.download.DownloadTask
 import io.pcla.core.download.OverallProgress
 import io.pcla.core.download.TaskResult
+import io.pcla.core.version.VersionEntry
+import io.pcla.core.version.VersionManifest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.net.HttpURLConnection
+import java.net.URL
+
+private enum class DlTab(val label: String) {
+    GAME("游戏"),
+    MODPACK("整合包"),
+    MOD("模组"),
+    RESOURCE("资源包"),
+    SHADER("光影"),
+    LINK("链接"),
+}
+
+private enum class VersionFilter(val label: String) {
+    RELEASE("正式版"),
+    SNAPSHOT("快照"),
+    ALL("全部"),
+}
 
 /**
- * Download page: multi-file queue.
- *
- * One URL per line, with an optional SHA-1 (40 hex) after a space. Concurrency is across files, not
- * threads within one file — measured here: one connection 1.30 MB/s, four shards 1.24 MB/s, so splitting
- * one link only makes the shards fight for bandwidth; downloading several small files at once is what really helps.
+ * 下载 tab, modelled on FCL's download page: category chips, search, version filter and a paged
+ * list. Only the 游戏 category is wired to a real source (the version manifest); the others state
+ * that plainly instead of showing a fake empty list. 链接 keeps the direct-URL queue.
  */
 @Composable
-fun DownloadScreen() {
+fun DownloadScreen(heapMb: Int) {
+    var tab by remember { mutableStateOf(DlTab.GAME) }
+    Column(
+        Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .statusBarsPadding()
+            .padding(horizontal = 18.dp),
+    ) {
+        Spacer(Modifier.height(10.dp))
+        PageHeader("下载", "分类 · 搜索 · 一键安装")
+        Spacer(Modifier.height(16.dp))
+
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            DlTab.entries.forEach { item ->
+                CategoryChip(item.label, tab == item) { tab = item }
+            }
+        }
+        Spacer(Modifier.height(14.dp))
+
+        when (tab) {
+            DlTab.GAME -> GameVersionBrowser(heapMb)
+            DlTab.LINK -> LinkQueue()
+            else -> PendingTab(tab) { tab = DlTab.GAME }
+        }
+        Spacer(Modifier.height(24.dp))
+    }
+}
+
+@Composable
+private fun CategoryChip(label: String, selected: Boolean, onClick: () -> Unit) {
+    val shape = RoundedCornerShape(12.dp)
+    Box(
+        Modifier
+            .clip(shape)
+            .background(if (selected) Ui.Lime else Ui.Surface)
+            .border(1.dp, if (selected) Ui.Lime else Ui.Stroke, shape)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 8.dp),
+    ) {
+        Text(
+            label,
+            fontSize = 12.sp,
+            color = if (selected) Ui.OnLime else Ui.TextMuted,
+            fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal,
+        )
+    }
+}
+
+@Composable
+private fun GameVersionBrowser(heapMb: Int) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+
+    var versions by remember { mutableStateOf<List<VersionEntry>>(emptyList()) }
+    var loading by remember { mutableStateOf(true) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var retry by remember { mutableStateOf(0) }
+    var query by remember { mutableStateOf("") }
+    var filter by remember { mutableStateOf(VersionFilter.RELEASE) }
+    var page by remember { mutableStateOf(0) }
+    var installed by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var installing by remember { mutableStateOf<String?>(null) }
+    var installStage by remember { mutableStateOf("") }
+    var installError by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(retry) {
+        loading = true
+        error = null
+        runCatching { withContext(Dispatchers.IO) { VersionCatalog.load() } }
+            .onSuccess {
+                versions = it
+                installed = it.mapNotNull { v -> v.id.takeIf { id -> isInstalled(context, id) } }.toSet()
+                loading = false
+            }
+            .onFailure {
+                error = it.message ?: it.javaClass.simpleName
+                loading = false
+            }
+    }
+    LaunchedEffect(query, filter) { page = 0 }
+
+    val filtered = remember(versions, query, filter) {
+        versions.filter { v ->
+            val typeOk = when (filter) {
+                VersionFilter.ALL -> true
+                VersionFilter.RELEASE -> v.type == "release"
+                VersionFilter.SNAPSHOT -> v.type == "snapshot"
+            }
+            typeOk && (query.isBlank() || v.id.contains(query.trim(), ignoreCase = true))
+        }
+    }
+    val pageSize = 20
+    val pageCount = maxOf(1, (filtered.size + pageSize - 1) / pageSize)
+    val current = page.coerceIn(0, pageCount - 1)
+    val shown = filtered.drop(current * pageSize).take(pageSize)
+
+    fun install(id: String) {
+        if (installing != null) return
+        installing = id
+        installStage = "0%"
+        installError = null
+        scope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    GameInstaller.install(context, id, heapMb) { p ->
+                        installStage = if (p.total > 0) "${p.done * 100 / p.total}%" else p.stage.take(12)
+                    }
+                }
+            }.onSuccess {
+                installed = installed + id
+            }.onFailure {
+                installError = "安装 $id 失败：" + (it.message ?: it.javaClass.simpleName)
+            }
+            installing = null
+            installStage = ""
+        }
+    }
+
+    PclCard {
+        OutlinedTextField(
+            value = query,
+            onValueChange = { query = it },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            shape = RoundedCornerShape(14.dp),
+            textStyle = MaterialTheme.typography.bodyMedium,
+            placeholder = { Text("搜索版本号，例如 1.20.1", fontSize = 13.sp) },
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+            VersionFilter.entries.forEach { f ->
+                MiniButton(f.label, enabled = true, active = filter == f) { filter = f }
+            }
+            Spacer(Modifier.weight(1f))
+            Text("${filtered.size} 个", fontSize = 10.5.sp, color = Ui.TextFaint)
+        }
+        if (installing != null) {
+            Text("正在安装 $installing · $installStage", fontSize = 10.5.sp, color = Ui.Lime)
+        }
+        installError?.let { Text(it, fontSize = 10.5.sp, color = Ui.Red) }
+    }
+
+    Spacer(Modifier.height(12.dp))
+
+    when {
+        loading -> PclCard {
+            Text("正在读取版本清单…", fontSize = 12.sp, color = Ui.TextMuted)
+        }
+        error != null -> PclCard {
+            Text("读取清单失败：$error", fontSize = 12.sp, color = Ui.TextMuted)
+            PclButton("重试", onClick = { retry++ }, height = 42)
+        }
+        else -> {
+            if (shown.isEmpty()) {
+                Text("没有匹配的版本。", fontSize = 12.sp, color = Ui.TextFaint, modifier = Modifier.padding(vertical = 16.dp))
+            }
+            Column {
+                shown.forEachIndexed { index, v ->
+                    GameVersionRow(
+                        entry = v,
+                        cubeColor = CubePalette[index % CubePalette.size],
+                        installed = installed.contains(v.id),
+                        installing = installing == v.id,
+                        stage = installStage,
+                        onInstall = { install(v.id) },
+                    )
+                    if (index != shown.lastIndex) PclDivider()
+                }
+            }
+            if (filtered.isNotEmpty()) {
+                Spacer(Modifier.height(8.dp))
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text("第 ${current + 1} / $pageCount 页", fontSize = 10.5.sp, color = Ui.TextFaint)
+                    Spacer(Modifier.weight(1f))
+                    MiniButton("上一页", enabled = current > 0) { page = current - 1 }
+                    Spacer(Modifier.width(8.dp))
+                    MiniButton("下一页", enabled = current < pageCount - 1) { page = current + 1 }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun GameVersionRow(
+    entry: VersionEntry,
+    cubeColor: androidx.compose.ui.graphics.Color,
+    installed: Boolean,
+    installing: Boolean,
+    stage: String,
+    onInstall: () -> Unit,
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(vertical = 11.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        VersionCube(cubeColor, 38.dp)
+        Spacer(Modifier.width(13.dp))
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(entry.id, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = Ui.Text)
+                Spacer(Modifier.width(7.dp))
+                PclTag(typeLabel(entry.type), if (entry.type == "release") TagTone.LIME else TagTone.OUTLINE)
+            }
+            Text(
+                (entry.releaseTime?.take(10) ?: "日期未知") + " · " + typeLabel(entry.type),
+                fontSize = 10.sp,
+                color = Ui.TextFaint,
+            )
+        }
+        when {
+            installed -> PclTag("已安装", TagTone.GRAY)
+            installing -> Text(stage, fontSize = 10.5.sp, color = Ui.Lime)
+            else -> PclButton(
+                "安装",
+                onClick = onInstall,
+                modifier = Modifier.width(76.dp),
+                height = 36,
+                highlight = true,
+            )
+        }
+    }
+}
+
+@Composable
+private fun PendingTab(tab: DlTab, onOpenGame: () -> Unit) {
+    PclCard("${tab.label}还没接入") {
+        Text(
+            "这个分类需要 CurseForge / Modrinth 的搜索、版本筛选和依赖解析，这一版没有假装有列表。",
+            fontSize = 12.sp,
+            color = Ui.TextMuted,
+            lineHeight = 17.sp,
+        )
+        Text(
+            "现在能用的是「游戏」里的版本下载，和「链接」里的直链队列。",
+            fontSize = 11.sp,
+            color = Ui.TextFaint,
+        )
+        PclButton("去看游戏版本", onClick = onOpenGame, height = 44)
+    }
+}
+
+/** 链接分类：原来的多文件直链队列，逻辑不动，只换了外壳。 */
+@Composable
+private fun LinkQueue() {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val main = remember { Handler(Looper.getMainLooper()) }
@@ -83,7 +358,6 @@ fun DownloadScreen() {
 
         scope.launch {
             val queue = DownloadQueue(DownloadConfig(), maxConcurrent = 2) { msg ->
-                // Queue logs are for debugging only; don't flood the UI
                 android.util.Log.d("PCLA-DL", msg)
             }
             val results = withContext(Dispatchers.IO) {
@@ -117,16 +391,7 @@ fun DownloadScreen() {
         }
     }
 
-    Column(
-        Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .statusBarsPadding()
-            .padding(horizontal = 18.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Spacer(Modifier.height(2.dp))
-        PageHeader("下载", "多文件队列 · 断点续传 · SHA-1 校验")
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         PclCard("下载队列") {
             Text(
                 "一行一个地址，地址后面空一格可以跟 SHA-1。",
@@ -140,7 +405,7 @@ fun DownloadScreen() {
                     .fillMaxWidth()
                     .height(118.dp),
                 textStyle = MaterialTheme.typography.bodyMedium,
-                shape = RoundedCornerShape(3.dp),
+                shape = RoundedCornerShape(14.dp),
                 placeholder = { Text("https://…/client.jar", fontSize = 13.sp) },
             )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -187,11 +452,12 @@ fun DownloadScreen() {
         PclCard("说明") {
             Text(
                 "· 小于 10MB 单连接，10–60MB 默认 4 分片，超过 60MB 动态加片。\n" +
-                    "· 分片数在设置里改得动，但别调到 16 以上——这台机器实测 6 线程就开始吃 429。\n" +
+                    "· 分片数改得动，但别调到 16 以上——这台机器实测 6 线程就开始吃 429。\n" +
                     "· 下载完成会校验 SHA-1；不匹配时坏文件不覆盖原文件，会先停下来问你。\n" +
-                    "· 文件落在应用私有目录，暂时不影响你在文件管理器里看到的 Download 文件夹。",
+                    "· 文件落在应用私有目录，暂时不影响文件管理器里的 Download 文件夹。",
                 fontSize = 12.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                lineHeight = 18.sp,
             )
         }
     }
@@ -212,6 +478,80 @@ private fun ProgressBar(fraction: Float) {
                 .fillMaxHeight()
                 .background(Ui.Lime),
         )
+    }
+}
+
+@Composable
+private fun MiniButton(text: String, enabled: Boolean = true, active: Boolean = false, onClick: () -> Unit) {
+    val shape = RoundedCornerShape(10.dp)
+    Box(
+        Modifier
+            .clip(shape)
+            .background(if (active) Ui.Lime else Ui.Surface)
+            .border(1.dp, if (active) Ui.Lime else Ui.Stroke, shape)
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+    ) {
+        Text(
+            text,
+            fontSize = 11.sp,
+            color = when {
+                active -> Ui.OnLime
+                enabled -> Ui.TextMuted
+                else -> Ui.TextFaint
+            },
+            fontWeight = if (active) FontWeight.Medium else FontWeight.Normal,
+        )
+    }
+}
+
+private fun typeLabel(type: String): String = when (type) {
+    "release" -> "正式版"
+    "snapshot" -> "快照"
+    "old_beta", "old_alpha" -> "远古版"
+    else -> type
+}
+
+private fun isInstalled(context: android.content.Context, id: String): Boolean =
+    File(context.filesDir, "game/versions/$id/$id.json").isFile
+
+/** Version manifest source used by the 游戏 category. Cached for the process lifetime. */
+private object VersionCatalog {
+    private const val BMCL = "https://bmclapi2.bangbang93.com/mc/game/version_manifest_v2.json"
+    private const val MOJANG = "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json"
+
+    private var cached: List<VersionEntry>? = null
+
+    suspend fun load(): List<VersionEntry> = withContext(Dispatchers.IO) {
+        cached?.let { return@withContext it }
+        var last: Throwable? = null
+        for (url in listOf(BMCL, MOJANG)) {
+            try {
+                val entries = VersionManifest.parse(fetchText(url))
+                if (entries.isNotEmpty()) {
+                    cached = entries
+                    return@withContext entries
+                }
+            } catch (t: Throwable) {
+                last = t
+            }
+        }
+        throw last ?: IllegalStateException("版本清单为空")
+    }
+
+    private fun fetchText(url: String): String {
+        val conn = (URL(url).openConnection() as HttpURLConnection).apply {
+            connectTimeout = 15_000
+            readTimeout = 25_000
+            instanceFollowRedirects = true
+            setRequestProperty("User-Agent", "PCLA/0.7")
+        }
+        try {
+            if (conn.responseCode !in 200..299) error("HTTP ${conn.responseCode}")
+            return conn.inputStream.bufferedReader().use { it.readText() }
+        } finally {
+            conn.disconnect()
+        }
     }
 }
 
