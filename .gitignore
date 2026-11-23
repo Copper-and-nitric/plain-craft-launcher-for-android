@@ -17,3 +17,6 @@ README.md.bak
 
 # 运行期日志
 *.log
+
+# 独立项目：PCLA 宣传网站，不属于本仓库，禁止提交
+/pcla-html/
