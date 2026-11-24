@@ -65,10 +65,9 @@ object LaunchLog {
      */
     fun hookVmStreams(context: Context) {
         val ctx = context.applicationContext
-        // 只走 JDK 一定有的那个重载 PrintStream(OutputStream, boolean)；
-        // 行拆分和 UTF-8 编码都在 LineWriter 里做，这里只负责接到 System 上
+        // JDK 7+ 都有的 PrintWriter(Writer)，接受字符流；PrintStream 只收字节流，重载又各家不同
         runCatching {
-            val out = java.io.PrintStream(LineWriter { stdout(ctx, it) }, true)
+            val out = java.io.PrintWriter(LineWriter { stdout(ctx, it) }, true)
             System.setOut(out)
             System.setErr(out)
         }
