@@ -108,8 +108,11 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
             try {
                 // libfcl 必须在 libpojavexec 之前加载：pojavexec 的 JNI_OnLoad 会用到 fcl 的表，
                 // 而 setupBridgeWindow 又依赖 JNI_OnLoad 初始化好的 pojav_environ。
-                LaunchLog.append(this, "Game: 开始加载原生库")
-                NativeBootstrap.loadLibs().forEach { LaunchLog.append(this, "Game: 原生库 $it") }
+                LaunchLog.append(this, "Game: 开始加载原生库（版本 ${BuildConfig.VERSION_NAME}/${BuildConfig.VERSION_CODE}）")
+                NativeBootstrap.loadLibs { step ->
+                    LaunchLog.append(this, "Game: $step")
+                    runOnUiThread { status.text = "PCLA 游戏窗口\n" + step }
+                }
                 LaunchLog.append(this, "Game: attach begin")
                 val err = SurfaceBridge.attach(holder.surface)
                 LaunchLog.append(this, "Game: attach " + (err ?: "ok"))

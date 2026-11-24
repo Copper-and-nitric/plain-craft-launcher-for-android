@@ -30,13 +30,26 @@ object NativeBootstrap {
     private external fun dlopen(path: String): Long
     private external fun chdir(path: String): Int
 
-    /** Load the three native libs. libfcl must be first: pojavexec's hooks depend on its tables. */
-    fun loadLibs(): List<String> {
+    /**
+     * 加载三个原生库。libfcl 必须最先：pojavexec 的 hook 依赖它的表。
+     *
+     * 每一行的前后都落一次日志：native 库的 JNI_OnLoad 真的会让整个进程消失，
+     * 而 System.loadLibrary 之后就不会再有任何 Java 代码执行，文件日志是唯一能指出
+     * 到底是哪个 .so 的线索。返回的字符串同时给调用方的日志用。
+     */
+    fun loadLibs(onStep: (String) -> Unit = {}): List<String> {
         val loaded = ArrayList<String>()
         for (name in listOf("fcl", "pojavexec", "pojavexec_awt")) {
-            runCatching { System.loadLibrary(name) }
-                .onSuccess { loaded += name }
-                .onFailure { loaded += "$name(失败: ${it.message})" }
+            onStep("正在加载 lib$name.so…")
+            val r = runCatching { System.loadLibrary(name) }
+            if (r.isSuccess) {
+                loaded += name
+                onStep("✓ lib$name.so")
+            } else {
+                val why = r.exceptionOrNull()?.message ?: "未知原因"
+                loaded += "$name(失败: $why)"
+                onStep("✗ lib$name.so：$why")
+            }
         }
         return loaded
     }
