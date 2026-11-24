@@ -442,7 +442,7 @@ fun main(args: Array<String>) {
  */
 private fun authChecks(meta: VersionMeta) {
     println("\n-- 登录")
-    eq("离线 UUID(Notch) 与原版一致", "b50ad385-829d-3141-a216-1d9b5c5e028c", OfflineAccount.uuid("Notch"))
+    eq("离线 UUID(Notch) 与原版一致", "b50ad385-829d-3141-a216-7e7d7539ba7f", OfflineAccount.uuid("Notch"))
     eq("离线 UUID(jeb_) 与原版一致", "a762f560-4fce-3236-812a-b80efff0b62b", OfflineAccount.uuid("jeb_"))
     eq("离线 UUID 区分大小写", false, OfflineAccount.uuid("notch") == OfflineAccount.uuid("Notch"))
 
