@@ -65,18 +65,17 @@ object LaunchLog {
      */
     fun hookVmStreams(context: Context) {
         val ctx = context.applicationContext
-        fun install() = runCatching {
-            System.setOut(java.io.PrintStream(LineWriter { stdout(ctx, it) }, true, "UTF-8"))
-            System.setErr(java.io.PrintStream(LineWriter { stdout(ctx, it) }, true, "UTF-8"))
+        // 只走 JDK 一定有的那个重载 PrintStream(OutputStream, boolean)；
+        // 行拆分和 UTF-8 编码都在 LineWriter 里做，这里只负责接到 System 上
+        runCatching {
+            val out = java.io.PrintStream(LineWriter { stdout(ctx, it) }, true)
+            System.setOut(out)
+            System.setErr(out)
         }
-        // JVM 起之前先装到 App 自己的 System，起之后游戏类加载器里的是同一个 System 类，一样生效
-        install()
-        // 再挂一组兜底：没被 hook 到的 native 写法（fprintf）不行，但至少 System.err 是必中的
     }
 
     private class LineWriter(private val sink: (String) -> Unit) : java.io.Writer() {
         private val buf = StringBuilder()
-        private var last = System.currentTimeMillis()
 
         override fun write(cbuf: CharArray, off: Int, len: Int) {
             synchronized(buf) {
@@ -93,7 +92,6 @@ object LaunchLog {
                     sink(buf.toString())
                     buf.setLength(0)
                 }
-                last = System.currentTimeMillis()
             }
         }
 
