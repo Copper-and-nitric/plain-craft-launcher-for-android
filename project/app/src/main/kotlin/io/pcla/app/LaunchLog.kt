@@ -65,45 +65,31 @@ object LaunchLog {
      */
     fun hookVmStreams(context: Context) {
         val ctx = context.applicationContext
-        // JDK 7+ 都有的 PrintWriter(Writer)，接受字符流；PrintStream 只收字节流，重载又各家不同
+        // System.setOut/setErr 只收 PrintStream，所以必须构造字节流；
+        // PrintStream(OutputStream, boolean) 是 JDK 1.0 就有的重载，没有字符编码歧义
         runCatching {
-            val out = java.io.PrintWriter(LineWriter { stdout(ctx, it) }, true)
+            val out = java.io.PrintStream(LogOutputStream { stdout(ctx, it) }, true)
             System.setOut(out)
             System.setErr(out)
         }
     }
 
-    private class LineWriter(private val sink: (String) -> Unit) : java.io.Writer() {
-        private val buf = StringBuilder()
-
-        override fun write(cbuf: CharArray, off: Int, len: Int) {
-            synchronized(buf) {
-                buf.append(cbuf, off, len)
-                while (true) {
-                    val nl = buf.indexOf("\n")
-                    if (nl < 0) break
-                    val line = buf.substring(0, nl).trimEnd('\r')
-                    buf.delete(0, nl + 1)
-                    sink(line)
-                }
-                // 没有换行的半行（进度条之类）攒够 4KB 也落一次，否则卡在这里会丢
-                if (buf.length > 4096) {
-                    sink(buf.toString())
-                    buf.setLength(0)
-                }
-            }
-        }
-
+    /** 字节流按 UTF-8 拼行，凑够一行就交给 sink；半行攒满 4KB 也先落一次。 */
+    private class LogOutputStream(private val sink: (String) -> Unit) : java.io.ByteArrayOutputStream() {
         override fun flush() {
-            synchronized(buf) {
-                if (buf.isNotEmpty()) {
-                    sink(buf.toString())
-                    buf.setLength(0)
-                }
+            val text = toString("UTF-8")
+            reset()
+            if (text.isEmpty()) return
+            for (line in text.split('\n')) {
+                if (line.isNotEmpty()) sink(line.trimEnd('\r'))
             }
         }
 
-        override fun close() = flush()
+        override fun write(b: ByteArray, off: Int, len: Int) {
+            super.write(b, off, len)
+            val nl = (off until off + len).any { b[it] == '\n'.code.toByte() }
+            if (nl || size() > 4096) flush()
+        }
     }
 
     fun tail(context: Context, lines: Int = 40): String = runCatching {
