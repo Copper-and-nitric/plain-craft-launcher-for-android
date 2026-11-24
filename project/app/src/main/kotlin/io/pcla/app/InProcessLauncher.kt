@@ -84,7 +84,20 @@ object InProcessLauncher {
                 runCatching { System.load(so.absolutePath) }
                     .onFailure { onLine("预载 " + so.name + " 失败：" + (it.message ?: "")) }
             }
-        onLine("同进程启动：${argv.size} 个参数，主类 " + installed.plan.mainClass)
+        // 崩溃是 native 带走整个进程时，onLine 回调来不及写盘；关键阶段先落文件，最后一行就是断点
+        fun mark(step: String) {
+            LaunchLog.append(context, "launch: $step")
+            onLine(step)
+        }
+        mark("渲染后端 " + Renderer.describe())
+        mark("classpath 前两项：" + installed.plan.classpath.split(":").take(2).joinToString(" | "))
+        for (j in AwtRuntime.JARS) {
+            val f = File(findAssetDir(context, AwtRuntime.BUNDLE_DIR), j)
+            mark((if (f.isFile) "✓ " else "✗ 缺 ") + j)
+        }
+        val merged = installed.plan.classpath.split(":").firstOrNull { it.contains("merged-modules") }
+        mark("merged-modules：" + (merged ?: "不在 classpath 里（GLFW 会退回官方实现，建窗必失败）"))
+        mark("同进程启动：${argv.size} 个参数，主类 " + installed.plan.mainClass)
         onLine(argv.take(6).joinToString(" "))
         val started = System.currentTimeMillis()
         // a native crash leaves no stack trace, so drop an "about to call the JVM" note first:
@@ -97,8 +110,19 @@ object InProcessLauncher {
                     argv.joinToString("\n")
             )
         }
+        LaunchLog.append(context, "launch: 进入 launchJVM（之后若进程直接消失，就是 JVM/native 崩了）")
         val code = VMLauncher.launchJVM(argv.toTypedArray())
         Log.i(TAG, "launchJVM 返回 $code，耗时 ${System.currentTimeMillis() - started}ms")
+        LaunchLog.append(context, "launch: launchJVM 返回 $code，耗时 ${System.currentTimeMillis() - started}ms")
         return code
     }
+
+    /**
+     * cacio jar 是从 assets 拷到 filesDir 才上 classpath 的，这里只是给它一个可读的路径做自检。
+     * 找不到就返回一个肯定不存在的占位，让上层显示 ✗，而不是抛异常把启动打断。
+     */
+    private fun findAssetDir(context: Context, name: String): String =
+        listOf(File(context.filesDir, "game/$name"), File(context.filesDir, name))
+            .firstOrNull { it.isDirectory }?.absolutePath
+            ?: File(context.filesDir, "game/$name").absolutePath
 }

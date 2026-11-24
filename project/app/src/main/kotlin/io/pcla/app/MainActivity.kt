@@ -1,6 +1,8 @@
 package io.pcla.app
 
+import android.content.Intent
 import android.graphics.Color
+import android.net.Uri
 import android.graphics.drawable.ColorDrawable
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -36,6 +38,39 @@ class MainActivity : ComponentActivity() {
             PclaTheme {
                 PclaApp()
             }
+        }
+        // 从浏览器回调进来时 App 可能是冷启动，onNewIntent 不会触发，要在这里也检查一次。
+        // 放在 setContent 之后：结果要弹 Toast，界面得先存在。
+        intent?.data?.takeIf { it.scheme == "login.live.com" }?.let {
+            MicrosoftLoginFlow.onResult(this, it)
+        }
+    }
+
+    /**
+     * 微软登录完成：浏览器带着 login.live.com 链接回到本 App，走这里。
+     * 用 onNewIntent 而不是只靠 onActivityResult——浏览器常常是另一个任务，结果不会回到发起者。
+     */
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        val uri = intent.data
+        if (uri != null && uri.scheme == "login.live.com") {
+            setIntent(intent)
+            MicrosoftLoginFlow.onResult(this, uri)
+        }
+    }
+
+    /** 微软登录授权完成后浏览器把 control 交回来，这里是唯一入口。 */
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        val uri: Uri? = data?.data
+        if (uri != null && uri.scheme == "login.live.com") {
+            MicrosoftLoginFlow.onResult(this, uri)
+            return
+        }
+        // 有些浏览器会把结果包在 EXTRA_INTENT 里
+        val inner = data?.getParcelableExtra<Intent>(Intent.EXTRA_INTENT)?.data
+        if (inner != null && inner.scheme == "login.live.com") {
+            MicrosoftLoginFlow.onResult(this, inner)
         }
     }
 

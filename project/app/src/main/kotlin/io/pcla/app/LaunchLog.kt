@@ -29,6 +29,86 @@ object LaunchLog {
         }
     }
 
+    /** 进程自己写的游戏日志：stderr 重定向到这里，崩之前的异常栈就在里面。 */
+    private const val STDOUT_NAME = "game-stdout.log"
+
+    fun stdoutFile(context: Context): File = File(context.filesDir, STDOUT_NAME)
+
+    @Synchronized
+    fun stdout(context: Context, line: String) {
+        runCatching {
+            val file = stdoutFile(context)
+            if (file.length() > 4L * 1024 * 1024) {
+                // 保留最后 1MB，别把整个日志清空（清空后崩之前的栈就没了）
+                val keep = file.readText().takeLast(1024 * 1024)
+                file.writeText(keep)
+            }
+            file.appendText(line + "\n")
+        }
+    }
+
+    fun stdoutTail(context: Context, lines: Int = 40): String = runCatching {
+        val file = stdoutFile(context)
+        if (!file.isFile) "" else file.readLines().takeLast(lines).joinToString("\n")
+    }.getOrDefault("")
+
+    fun clearStdout(context: Context) {
+        runCatching { stdoutFile(context).writeText("") }
+    }
+
+    /**
+     * 把 Java 的 System.err / System.out 接到日志文件。
+     *
+     * 为什么必须做：JVM 在 App 进程里跑，崩溃前 Minecraft 打的异常栈走的是 JVM 的 System.err，
+     * 不是 Android 的 logcat；进程被 native 带走后，这些输出就全丢了。接一次，之后「建窗失败」
+     * 就能看到到底是 HeadlessException、还是 UnsatisfiedLinkError、还是 Cacio 的 NPE。
+     */
+    fun hookVmStreams(context: Context) {
+        val ctx = context.applicationContext
+        fun install() = runCatching {
+            System.setOut(java.io.PrintStream(LineWriter { stdout(ctx, it) }, true, "UTF-8"))
+            System.setErr(java.io.PrintStream(LineWriter { stdout(ctx, it) }, true, "UTF-8"))
+        }
+        // JVM 起之前先装到 App 自己的 System，起之后游戏类加载器里的是同一个 System 类，一样生效
+        install()
+        // 再挂一组兜底：没被 hook 到的 native 写法（fprintf）不行，但至少 System.err 是必中的
+    }
+
+    private class LineWriter(private val sink: (String) -> Unit) : java.io.Writer() {
+        private val buf = StringBuilder()
+        private var last = System.currentTimeMillis()
+
+        override fun write(cbuf: CharArray, off: Int, len: Int) {
+            synchronized(buf) {
+                buf.append(cbuf, off, len)
+                while (true) {
+                    val nl = buf.indexOf("\n")
+                    if (nl < 0) break
+                    val line = buf.substring(0, nl).trimEnd('\r')
+                    buf.delete(0, nl + 1)
+                    sink(line)
+                }
+                // 没有换行的半行（进度条之类）攒够 4KB 也落一次，否则卡在这里会丢
+                if (buf.length > 4096) {
+                    sink(buf.toString())
+                    buf.setLength(0)
+                }
+                last = System.currentTimeMillis()
+            }
+        }
+
+        override fun flush() {
+            synchronized(buf) {
+                if (buf.isNotEmpty()) {
+                    sink(buf.toString())
+                    buf.setLength(0)
+                }
+            }
+        }
+
+        override fun close() = flush()
+    }
+
     fun tail(context: Context, lines: Int = 40): String = runCatching {
         val file = File(context.filesDir, FILE_NAME)
         if (!file.isFile) "" else file.readLines().takeLast(lines).joinToString("\n")

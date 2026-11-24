@@ -10,6 +10,17 @@ import java.io.File
  * setupGraphicAndSoundEngine (see FCL source 1.3.1.8). A missing step never shows up as an
  * error, but as "the JVM starts yet the game won't" or "dlopen can't find libjli.so".
  */
+/** 渲染后端。改这里一个地方，env 和日志就都跟着变。 */
+object Renderer {
+    /** 传给 POJAV_RENDERER；FCL 用 opengles2 走 gl4es，兼容面最广。 */
+    const val ENGINE = "opengles2"
+    /** 传给 LIBGL_ES。 */
+    const val LIBGL_ES = "2"
+
+    /** 启动日志里显示一句，出问题时先确认它没被别的东西改掉。 */
+    fun describe(): String = "$ENGINE / GLES$LIBGL_ES（gl4es）"
+}
+
 object NativeBootstrap {
     init {
         System.loadLibrary("pcla_surface")
@@ -42,15 +53,20 @@ object NativeBootstrap {
 
         val envMap = linkedMapOf(
             "HOME" to context.filesDir.absolutePath,
+            // 清掉外面的 JAVA_TOOL_OPTIONS 之类，免得某些 ROM 塞进来的参数把 JLI_Launch 搅乱
+            "JDK_JAVA_OPTIONS" to "",
             "TMPDIR" to cache,
             "JAVA_HOME" to runtime.home.absolutePath,
             "PATH" to runtime.home.absolutePath + "/bin:" + System.getenv("PATH").orEmpty(),
             "LD_LIBRARY_PATH" to libPath,
             "POJAV_NATIVEDIR" to nativeDir,
             "FCL_NATIVEDIR" to nativeDir,
-            // this gl4es + GLES2 group is FCL's default for ID_GL4ES
-            "POJAV_RENDERER" to "opengles2",
-            "LIBGL_ES" to "2",
+            // glfwCreateWindow 的 native 实现按这个变量选后端：opengles2 / opengles3 / vulkan_zink /
+            // gallium_virgl。空串会让它走 "Unimplemented" 分支，窗口建不出来却不一定有 Java 异常，
+            // 表现就是「黑一下退回桌面」。这里是 FCL 的默认值。
+            "POJAV_RENDERER" to Renderer.ENGINE,
+            // gl4es 的 GLES 版本：2 兼容性最好，3 性能更好但老驱动会挂
+            "LIBGL_ES" to Renderer.LIBGL_ES,
             "LIBGL_MIPMAP" to "3",
             "LIBGL_NORMALIZE" to "1",
             "LIBGL_NOINTOVLHACK" to "1",

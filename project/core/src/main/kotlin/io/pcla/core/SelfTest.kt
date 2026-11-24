@@ -9,6 +9,10 @@ import io.pcla.core.game.GamePlan
 import io.pcla.core.game.GameVerifier
 import io.pcla.core.game.NativeExtractor
 import io.pcla.core.launch.AndroidRuntime
+import io.pcla.core.auth.Account
+import io.pcla.core.auth.LaunchAuth
+import io.pcla.core.auth.MicrosoftLogin
+import io.pcla.core.auth.OfflineAccount
 import io.pcla.core.launch.AwtRuntime
 import io.pcla.core.launch.Preflight
 import io.pcla.core.launch.ClasspathBuilder
@@ -424,7 +428,66 @@ fun main(args: Array<String>) {
     check("采样太少先别下结论", MemoryPulse.classify(listOf(1), 2048).verdict == Verdict.正常)
     check("低占用判正常", MemoryPulse.classify(listOf(100, 120, 110), 2048).verdict == Verdict.正常)
 
+    authChecks(meta)
+
     println("\n========================================")
     println("通过 $passed 项，失败 $failed 项")
     if (failed > 0) kotlin.system.exitProcess(1)
+}
+
+/**
+ * Login: the offline UUID must be the same one vanilla derives, otherwise saves and servers
+ * don't recognise the player. The expected values below come from `UUID.nameUUIDFromBytes`
+ * run on a desktop JVM, not from this implementation.
+ */
+private fun authChecks(meta: VersionMeta) {
+    println("\n-- 登录")
+    eq("离线 UUID(Notch) 与原版一致", "b50ad385-829d-3141-a216-1d9b5c5e028c", OfflineAccount.uuid("Notch"))
+    eq("离线 UUID(jeb_) 与原版一致", "a762f560-4fce-3236-812a-b80efff0b62b", OfflineAccount.uuid("jeb_"))
+    eq("离线 UUID 区分大小写", false, OfflineAccount.uuid("notch") == OfflineAccount.uuid("Notch"))
+
+    val steve = OfflineAccount.of("Steve")!!
+    eq("建账号保留用户名", "Steve", steve.name)
+    eq("离线账号是离线", Account.Kind.OFFLINE, steve.kind)
+    eq("离线令牌为 0", "0", steve.accessToken)
+    check("首尾空格自动去掉", OfflineAccount.of("  Steve  ")?.name == "Steve")
+    check("两个字不行", OfflineAccount.problem("ab") != null)
+    check("17 个字不行", OfflineAccount.problem("abcdefghijklmnopq") != null)
+    check("中文不行", OfflineAccount.problem("史蒂夫") != null)
+    check("下划线可以", OfflineAccount.problem("Steve_01") == null)
+    check("空名字提示起名", OfflineAccount.problem("  ")?.contains("起个名字") == true)
+
+    val plan = ClasspathBuilder.build(meta, "/libs", "/g/client.jar", ClasspathBuilder.placeholders("CP", "/n", "/g", "/a", "1.16", "1.16.5", "PCLA"))
+    check("旧名字 PCLA 先在", plan.gameArgs.contains("PCLA"))
+    val replaced = LaunchAuth.apply(plan, steve)
+    check("旧名字被换掉", !replaced.gameArgs.contains("PCLA"))
+    eq("新名字只出现一次", 1, replaced.gameArgs.count { it == "Steve" })
+    check("uuid 参数紧跟 username", replaced.gameArgs.indexOf("--uuid") == replaced.gameArgs.indexOf("--username") + 2)
+    eq("uuid 去掉连字符", OfflineAccount.uuid("Steve").replace("-", ""), replaced.gameArgs[replaced.gameArgs.indexOf("--uuid") + 1])
+    check("离线 userType=legacy", replaced.gameArgs[replaced.gameArgs.indexOf("--userType") + 1] == "legacy")
+    check("离线没有 xuid 参数", !replaced.gameArgs.contains("--xuid"))
+    check("离线令牌进 jvm 属性", replaced.jvmArgs.contains("-Dminecraft.api.accessToken=0"))
+    check("里面不再有未替换占位符", replaced.jvmArgs.none { it.contains("\${") })
+
+    val msa = Account("Notch", "b50ad385829d3141a2161d9b5c5e028c", "eyJraWQiOiJ0b2tlbiJ9.secret", Account.Kind.MICROSOFT, "2535413435302470")
+    val online = LaunchAuth.apply(plan, msa)
+    check("正版 userType=msa", online.gameArgs[online.gameArgs.indexOf("--userType") + 1] == "msa")
+    check("正版带 xuid", online.gameArgs[online.gameArgs.indexOf("--xuid") + 1] == "2535413435302470")
+    check("正版令牌进 jvm 属性", online.jvmArgs.contains("-Dminecraft.api.accessToken=eyJraWQiOiJ0b2tlbiJ9.secret"))
+    check("正版账号类型属性", online.jvmArgs.contains("-Dminecraft.api.account.type=msa"))
+    check("账户 toString 不露令牌", !msa.toString().contains("secret"))
+
+    // 旧版本 json 里带 -Dminecraft.api.auth.host=authserver.mojang.com，重新登录时不能被它盖掉
+    val legacy = plan.copy(jvmArgs = plan.jvmArgs + "-Dminecraft.api.auth.host=https://authserver.mojang.com")
+    check("旧的 auth 主机被移除", LaunchAuth.apply(legacy, steve).jvmArgs.none { it.contains("authserver.mojang.com") })
+    check("`--username=x` 形式也能删干净", LaunchAuth.stripGameArgs(listOf("--username=x", "--gameDir", "/g")) == listOf("--gameDir", "/g"))
+    check("`--username x` 两段一起删", LaunchAuth.stripGameArgs(listOf("--username", "x", "--gameDir", "/g")) == listOf("--gameDir", "/g"))
+
+    val (code, err) = MicrosoftLogin.parseRedirect(MicrosoftLogin.REDIRECT_URL + "?code=M.R3_BAY.abc%2Bd&state=xyz")
+    eq("从重定向里拿到 code", "M.R3_BAY.abc+d", code)
+    check("成功时没有错误", err == null)
+    val (c2, e2) = MicrosoftLogin.parseRedirect(MicrosoftLogin.REDIRECT_URL + "?error=access_denied")
+    check("取消登录读得出来", c2 == null && e2 != null && e2.contains("取消"))
+    check("授权链接带 client id", MicrosoftLogin.authorizeUrl("s").contains("client_id=" + MicrosoftLogin.CLIENT_ID))
+    check("授权链接带 state", MicrosoftLogin.authorizeUrl("s1").contains("state=s1"))
 }

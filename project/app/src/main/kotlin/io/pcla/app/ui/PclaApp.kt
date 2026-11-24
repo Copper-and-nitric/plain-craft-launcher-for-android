@@ -56,6 +56,10 @@ fun PclaApp() {
     var error by remember { mutableStateOf<String?>(null) }
     var reload by remember { mutableStateOf(0) }
     var tab by rememberSaveable { mutableStateOf(0) }
+    // 登录是盖在整个界面上的一个页面，不在底部四个 tab 里
+    var showLogin by rememberSaveable { mutableStateOf(false) }
+    val saved = AccountState.remember(context)
+    val current = saved.currentAccount()
 
     LaunchedEffect(reload) {
         report = null
@@ -73,22 +77,36 @@ fun PclaApp() {
                 .weight(1f)
                 .fillMaxWidth(),
         ) {
+            if (showLogin) {
+                LoginScreen(onBack = { showLogin = false })
+                return@Box
+            }
             val message = error
             val r = report
             when {
                 message != null -> CenteredMessage("设备探测失败：$message") { reload++ }
                 r == null -> LoadingView()
                 else -> when (tab) {
-                    0 -> HomeScreen(r, onOpenVersions = { tab = 1 })
+                    0 -> HomeScreen(
+                        report = r,
+                        account = current,
+                        onOpenLogin = { showLogin = true },
+                        onOpenVersions = { tab = 1 },
+                    )
                     1 -> VersionsScreen(r, onReload = { reload++ })
                     2 -> DownloadScreen(
                         heapMb = r.configs[r.recommendation.version]?.heapMb ?: r.profile.heapSweetMb,
                     )
-                    else -> SettingsScreen(r, onReload = { reload++ })
+                    else -> SettingsScreen(
+                        report = r,
+                        account = current,
+                        onOpenLogin = { showLogin = true },
+                        onReload = { reload++ },
+                    )
                 }
             }
         }
-        PclaBottomBar(tab) { tab = it }
+        if (!showLogin) PclaBottomBar(tab) { tab = it }
     }
 }
 

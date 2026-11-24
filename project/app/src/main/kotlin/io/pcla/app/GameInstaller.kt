@@ -2,6 +2,8 @@ package io.pcla.app
 
 import android.content.Context
 import io.pcla.core.asset.AssetIndex
+import io.pcla.core.auth.Account
+import io.pcla.core.auth.LaunchAuth
 import io.pcla.core.game.GamePlan
 import io.pcla.core.game.NativeExtractor
 import io.pcla.core.game.RemoteFile
@@ -11,6 +13,7 @@ import io.pcla.core.launch.ClasspathBuilder
 import io.pcla.core.launch.JavaPolicy
 import io.pcla.core.launch.LaunchCommand
 import io.pcla.core.launch.LaunchPlan
+import io.pcla.core.launch.Preflight
 import io.pcla.core.launch.VersionMeta
 import io.pcla.core.version.VersionManifest
 import kotlinx.coroutines.Dispatchers
@@ -157,7 +160,7 @@ object GameInstaller {
      * an Intent, so we reassemble it from the version id. Only local json and downloaded
      * libraries are read; no request is made.
      */
-    fun assemble(context: Context, versionId: String): Installed {
+    fun assemble(context: Context, versionId: String, account: Account? = null): Installed {
         val root = File(context.filesDir, "game")
         val versionJson = File(root, "versions/$versionId/$versionId.json")
         require(versionJson.isFile) {
@@ -187,9 +190,42 @@ object GameInstaller {
             assetsIndex = assetsName,
             versionName = versionId,
         )
-        val launchPlan = ClasspathBuilder.build(
+        val plan1 = ClasspathBuilder.build(
             runtimeMeta, File(root, "libraries").absolutePath, clientJar, placeholders, lwjgl.jars,
         )
+        // 玩家名字、UUID、令牌：登录页选了谁就以谁的身份进游戏；没登录时保留原版默认（PCLA / 全零）
+        val launchPlan = account?.let { LaunchAuth.apply(plan1, it) } ?: plan1
+
+        // 启动前体检：classpath 里的 jar 与三处 natives 目录真的存在吗？
+        // 这一步在真机上比什么都值钱——「文件少一个」会表现成建窗时莫名其妙的 UnsatisfiedLinkError。
+        val missing = plan1.classpath.split(":")
+            .filter { it.endsWith(".jar") && !File(it).isFile }
+        val nativeDir = File(root, "natives")
+        val nativeFiles = listOf(nativeDir, File(root, AndroidRuntime.BUNDLE_DIR + "/natives"),
+            File(context.applicationInfo.nativeLibraryDir))
+            .flatMap { d -> d.listFiles()?.map { it.name } ?: emptyList() }
+        val checks = Preflight.run(
+            plan = launchPlan,
+            jarNames = missing,
+            nativePaths = listOf(
+                nativeDir.absolutePath,
+                File(root, AndroidRuntime.BUNDLE_DIR + "/natives").absolutePath,
+                context.applicationInfo.nativeLibraryDir,
+            ),
+            nativeFiles = nativeFiles,
+            expectedMajor = meta.javaMajor ?: JavaPolicy.requiredMajor(versionId),
+            libraryPath = listOf(
+                nativeDir.absolutePath,
+                File(root, AndroidRuntime.BUNDLE_DIR + "/natives").absolutePath,
+                context.applicationInfo.nativeLibraryDir,
+            ).joinToString(":"),
+        )
+        checks.filter { !it.ok }.forEach {
+            LaunchLog.append(context, "体检 ✗ ${it.name} —— ${it.detail}")
+        }
+        if (missing.isNotEmpty()) {
+            error("classpath 里有 ${missing.size} 个 jar 不存在（第一个：${File(missing.first()).name}），先到「版本」页重新下载")
+        }
         val major = meta.javaMajor ?: JavaPolicy.requiredMajor(versionId)
         return Installed(versionId, root, launchPlan, major)
     }
@@ -200,7 +236,10 @@ object GameInstaller {
         // otherwise a same-named liblwjgl.so resolves to the x86 one (wrong ELF class)
         File(root, AndroidRuntime.BUNDLE_DIR + "/natives").absolutePath,
         File(root, "natives").absolutePath,
-        context.applicationInfo.nativeLibraryDir,
+        // 同进程跑 JVM 时，nativeLibraryDir 里的 libfcl/libpojavexec 已经由 System.loadLibrary 载进
+        // 全局符号表；但 dlopen 按 soname 找 libpojavexec_awt.so 时需要它真的在这个目录下。
+        // 兜底再加一遍 App 私有目录（有的 ROM 会把 nativeLibraryDir 放在 /data/app 只读挂载上）。
+        File(context.applicationInfo.nativeLibraryDir).absolutePath,
     ).joinToString(":")
 
     /** Unpack the JRE and start the process; logs stream line by line. Caller must waitFor it. */

@@ -22,6 +22,14 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- 微软登录回调：OAuth 的 redirect_uri 用 https://login.live.com/oauth20_desktop.srf，
+                 把 login.live.com 声明成可被 App 接管的 scheme，浏览器授权完直接交回启动器。 -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="login.live.com" android:host="oauth20_desktop.srf" />
+            </intent-filter>
         </activity>
         <activity
             android:name=".GameActivity"

@@ -38,6 +38,7 @@ import io.pcla.app.BuildConfig
 import io.pcla.app.LaunchLog
 import io.pcla.app.ui.theme.ThemePrefs
 import io.pcla.app.ui.theme.Ui
+import io.pcla.core.auth.Account
 import io.pcla.core.launch.JavaPolicy
 
 /**
@@ -45,10 +46,16 @@ import io.pcla.core.launch.JavaPolicy
  * the launch log and the about block.
  */
 @Composable
-internal fun SettingsScreen(report: Report, onReload: () -> Unit) {
+internal fun SettingsScreen(
+    report: Report,
+    account: Account? = null,
+    onOpenLogin: () -> Unit = {},
+    onReload: () -> Unit = {},
+) {
     val context = LocalContext.current
     val major = JavaPolicy.requiredMajor(report.recommendation.version ?: "1.16.5")
     var logText by remember { mutableStateOf(LaunchLog.tail(context, 40)) }
+    var gameOut by remember { mutableStateOf(LaunchLog.stdoutTail(context, 40)) }
 
     fun switchTheme(light: Boolean) {
         ThemePrefs.setLight(context, light)
@@ -64,8 +71,11 @@ internal fun SettingsScreen(report: Report, onReload: () -> Unit) {
             .padding(horizontal = 18.dp),
     ) {
         Spacer(Modifier.height(10.dp))
-        PageHeader("设置", "外观 · 设备 · 运行时 · 诊断")
+        PageHeader("设置", "账号 · 外观 · 设备 · 运行时 · 诊断")
         Spacer(Modifier.height(18.dp))
+
+        AccountCard(account, onOpenLogin)
+        Spacer(Modifier.height(14.dp))
 
         PclCard("外观") {
             ThemeChoice(
@@ -104,7 +114,10 @@ internal fun SettingsScreen(report: Report, onReload: () -> Unit) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 PclButton(
                     "刷新",
-                    onClick = { logText = LaunchLog.tail(context, 40) },
+                    onClick = {
+                        logText = LaunchLog.tail(context, 40)
+                        gameOut = LaunchLog.stdoutTail(context, 40)
+                    },
                     modifier = Modifier.weight(1f),
                     height = 40,
                 )
@@ -112,12 +125,27 @@ internal fun SettingsScreen(report: Report, onReload: () -> Unit) {
                     "清空",
                     onClick = {
                         LaunchLog.clear(context)
+                        LaunchLog.clearStdout(context)
                         logText = ""
+                        gameOut = ""
                     },
                     modifier = Modifier.weight(1f),
                     height = 40,
                 )
             }
+            PclDivider()
+            Text(
+                "游戏进程输出（Java 的 stderr）",
+                fontSize = 10.5.sp,
+                color = Ui.TextMuted,
+            )
+            Text(
+                "建窗失败、GLFW 报错、Minecraft 崩溃的异常栈都在这里。游戏窗口黑一下就退回桌面时，先看这段。",
+                fontSize = 10.sp,
+                color = Ui.TextFaint,
+                lineHeight = 14.sp,
+            )
+            PclCode(gameOut.ifBlank { "还没有游戏进程输出。" })
         }
         Spacer(Modifier.height(14.dp))
 
@@ -168,6 +196,44 @@ private fun ThemeChoice(
         }
         if (selected) {
             Icon(Icons.Filled.Check, contentDescription = "已选", tint = Ui.Lime, modifier = Modifier.size(20.dp))
+        }
+    }
+}
+
+/**
+ * 设置里的账号块：显示当前是谁，一点就进登录页换人 / 加一个。
+ * 正版那块顺带说明「令牌过期会静默续期」，省得玩家看到要求重新登录就以为登录坏了。
+ */
+@Composable
+private fun AccountCard(account: Account?, onOpenLogin: () -> Unit) {
+    PclCard("账号") {
+        Row(
+            Modifier.fillMaxWidth().clip(androidx.compose.foundation.shape.RoundedCornerShape(12.dp)).clickable(onClick = onOpenLogin)
+                .padding(vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Avatar(account?.name?.firstOrNull()?.uppercase() ?: "?")
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(account?.name ?: "未登录", fontSize = 15.sp, fontWeight = FontWeight.Medium, color = Ui.Text)
+                    Spacer(Modifier.width(6.dp))
+                    if (account != null) {
+                        val tone = if (account.isMicrosoft) TagTone.LIME else TagTone.GRAY
+                        PclTag(if (account.isMicrosoft) "正版" else "离线", tone)
+                    }
+                }
+                Text(
+                    when {
+                        account == null -> "点这里登录：正版（微软）或离线"
+                        account.isMicrosoft -> "微软正版 · 令牌过期会自动续期"
+                        else -> "离线 · 不能进正版服务器"
+                    },
+                    fontSize = 10.sp,
+                    color = Ui.TextFaint,
+                )
+            }
+            Text("切换 / 登录", fontSize = 12.sp, color = Ui.Lime)
         }
     }
 }

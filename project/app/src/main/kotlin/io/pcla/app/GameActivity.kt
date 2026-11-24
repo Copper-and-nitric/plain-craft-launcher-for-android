@@ -31,6 +31,13 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         LaunchLog.append(this, "GameActivity onCreate")
+        // 线程里没接住的异常默认只进 logcat；同进程 JVM 崩了 App 直接死，所以这里先写文件
+        val appContext = applicationContext
+        Thread.setDefaultUncaughtExceptionHandler { t, e ->
+            LaunchLog.append(appContext, "崩溃 ${t.name}：$e")
+            e.stackTraceToString().lineSequence().take(25).forEach { LaunchLog.stdout(appContext, it) }
+            android.os.Process.killProcess(android.os.Process.myPid())
+        }
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         window.decorView.systemUiVisibility = (
             View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
@@ -72,10 +79,31 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         started = true
         val versionId = intent.getStringExtra(EXTRA_VERSION) ?: "1.16.5"
         val heapMb = intent.getIntExtra(EXTRA_HEAP, 2048)
+        val accountUuid = intent.getStringExtra(EXTRA_ACCOUNT)
         val f = holder.surfaceFrame
         log("Surface 已创建 ${f.width()}x${f.height()}")
+        // 从这一刻起，JVM 里 Minecraft 打的每一行 stderr（包括建窗失败的异常栈）都落进 game-stdout.log
+        LaunchLog.clearStdout(this)
+        LaunchLog.hookVmStreams(this)
         // the JVM runs until the game exits, so this whole block goes on a worker thread;
         // this Activity's UI thread only displays status.
+        //
+        // 看门狗：游戏起来就沉到画面下面，起不来则把 game-stdout.log 的尾巴刷到状态条上，
+        // 玩家截个图就能看到崩溃原因，不用连电脑看 logcat。
+        Thread({
+            var lastShown = ""
+            while (true) {
+                Thread.sleep(2000)
+                val tail = LaunchLog.stdoutTail(this, 6)
+                if (tail.isNotBlank() && tail != lastShown) {
+                    lastShown = tail
+                    runOnUiThread {
+                        // 只在 JVM 还没接管画面时刷新状态条（JVM 起来后这个 TextView 本来就被盖住了）
+                        if (status.text.startsWith("PCLA 游戏窗口")) status.text = "PCLA 游戏窗口\n" + tail
+                    }
+                }
+            }
+        }, "pcla-watchdog").apply { isDaemon = true; start() }
         Thread({
             try {
                 // libfcl 必须在 libpojavexec 之前加载：pojavexec 的 JNI_OnLoad 会用到 fcl 的表，
@@ -90,10 +118,16 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
                     return@Thread
                 }
                 runOnUiThread { log("✓ Surface 已交给 libpojavexec.so，准备 JVM…") }
-                val installed = GameInstaller.assemble(this, versionId)
+                // 身份不在 Intent 里传（令牌太敏感），只带 UUID，在这里从账号库取；取不到就按离线默认名启动
+                val account = accountUuid?.let { AccountStore.load(this).byUuid(it) }
+                val installed = GameInstaller.assemble(this, versionId, account)
                 runOnUiThread {
-                    log("Java ${installed.javaMajor}，主类 ${installed.plan.mainClass}\n开始启动 JVM…")
+                    val who = account?.let { "${it.name}${if (it.isMicrosoft) "（正版）" else "（离线）"}" } ?: "未登录"
+                    log("以 $who 启动\nJava ${installed.javaMajor}，主类 ${installed.plan.mainClass}\n开始启动 JVM…")
                 }
+                LaunchLog.append(this, "Game: 身份 $account")
+                // 正版令牌如果是续期来的，只在内存里亮一下，退出游戏时再落盘，游戏中途崩了也不丢
+                account?.takeIf { it.isMicrosoft }?.let { AccountStore.patch(this, it, flush = false) }
                 val code = InProcessLauncher.launch(this, installed, heapMb) { line ->
                     LaunchLog.append(this, "JVM $line")
                     runOnUiThread { status.append("\n" + line.take(90)) }
@@ -117,11 +151,13 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
 
     override fun onDestroy() {
         LaunchLog.append(this, "GameActivity onDestroy")
+        runCatching { AccountStore.flush(this) }
         super.onDestroy()
     }
 
     companion object {
         const val EXTRA_VERSION = "versionId"
         const val EXTRA_HEAP = "heapMb"
+        const val EXTRA_ACCOUNT = "accountUuid"
     }
 }

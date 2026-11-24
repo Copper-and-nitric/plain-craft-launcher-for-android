@@ -29,7 +29,9 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -45,11 +47,13 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import io.pcla.app.AccountStore
 import io.pcla.app.GameActivity
 import io.pcla.app.GameInstaller
 import io.pcla.app.LaunchLog
 import io.pcla.app.R
 import io.pcla.app.ui.theme.Ui
+import io.pcla.core.auth.Account
 import io.pcla.core.launch.JavaPolicy
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -65,9 +69,21 @@ import java.util.Calendar
  * version json is already on disk, and the button really downloads + opens the game window.
  */
 @Composable
-internal fun HomeScreen(report: Report, onOpenVersions: () -> Unit) {
+internal fun HomeScreen(
+    report: Report,
+    account: Account? = null,
+    onOpenLogin: () -> Unit = {},
+    onOpenVersions: () -> Unit = {},
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    // 启动那一刻才发现正版令牌过期，就把错误停在页面上，别让玩家以为「点了没反应」
+    var authProblem by remember { mutableStateOf<String?>(null) }
+    var needLogin by remember { mutableStateOf(false) }
+    var dismissedFor by remember { mutableIntStateOf(0) }
+    LaunchedEffect(LoginSignal.request) {
+        if (LoginSignal.request > dismissedFor && account == null) onOpenLogin()
+    }
 
     val version = report.recommendation.version
         ?: report.ranking.firstOrNull()?.first
@@ -103,12 +119,28 @@ internal fun HomeScreen(report: Report, onOpenVersions: () -> Unit) {
                 }
                 if (v == version) ready = true
                 LaunchLog.append(context, "安装完成 $v")
+                // 身份在最后一步才定：这时才需要联网续期正版令牌，下载阶段不碰
+                val who = account ?: AccountStore.load(context).currentAccount()
+                val (finalAccount, why) = if (who == null) {
+                    null to "先在右上角登录：正版或离线都行"
+                } else {
+                    AccountState.freshForLaunch(context, who)
+                }
+                if (finalAccount == null) {
+                    authProblem = why
+                    needLogin = true
+                    stage = ""
+                    LoginSignal.request++ // 让启动页立刻弹出登录，而不是只挂一条提示
+                    return@launch
+                }
+                LaunchLog.append(context, "以 ${finalAccount.name}（${if (finalAccount.isMicrosoft) "正版" else "离线"}）启动")
                 stage = "打开游戏窗口…"
                 LaunchLog.append(context, "startActivity GameActivity $v")
                 context.startActivity(
                     Intent(context, GameActivity::class.java)
                         .putExtra(GameActivity.EXTRA_VERSION, installed.versionId)
                         .putExtra(GameActivity.EXTRA_HEAP, h)
+                        .putExtra(GameActivity.EXTRA_ACCOUNT, finalAccount.uuid)
                 )
                 stage = ""
             }.onFailure {
@@ -128,10 +160,10 @@ internal fun HomeScreen(report: Report, onOpenVersions: () -> Unit) {
             .padding(horizontal = 18.dp),
     ) {
         Spacer(Modifier.height(10.dp))
-        HomeHeader()
+        HomeHeader(account, onOpenLogin)
         Spacer(Modifier.height(24.dp))
 
-        Text(greeting(), fontSize = 12.sp, color = Ui.TextMuted)
+        Text(greeting(account?.name), fontSize = 12.sp, color = Ui.TextMuted)
         Spacer(Modifier.height(6.dp))
         Text(
             "今天想玩哪个版本？",
@@ -141,6 +173,16 @@ internal fun HomeScreen(report: Report, onOpenVersions: () -> Unit) {
             lineHeight = 33.sp,
             letterSpacing = (-0.3).sp,
         )
+        // 重新登录过就不再挂着旧错误
+        if (account != null && dismissedFor < LoginSignal.request) {
+            dismissedFor = LoginSignal.request
+            authProblem = null
+            needLogin = false
+        }
+        authProblem?.let {
+            Spacer(Modifier.height(12.dp))
+            AuthBanner(it, needLogin, onOpenLogin, onDismiss = { authProblem = null; needLogin = false })
+        }
         Spacer(Modifier.height(18.dp))
 
         HeroCard(
@@ -193,7 +235,7 @@ internal fun HomeScreen(report: Report, onOpenVersions: () -> Unit) {
 }
 
 @Composable
-private fun HomeHeader() {
+private fun HomeHeader(account: Account?, onOpenLogin: () -> Unit) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Box(
             Modifier
@@ -213,9 +255,60 @@ private fun HomeHeader() {
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
             Text("PCLA", fontSize = 20.sp, fontWeight = FontWeight.SemiBold, color = Ui.Text, letterSpacing = 0.4.sp)
-            Text("Plain Craft Launcher", fontSize = 10.5.sp, color = Ui.TextFaint)
+            Text(
+                account?.let { (if (it.isMicrosoft) "正版 · " else "离线 · ") + it.name } ?: "未登录 · 点这里登录",
+                fontSize = 10.5.sp,
+                color = if (account == null) Ui.TextMuted else Ui.TextFaint,
+            )
         }
-        Avatar("S")
+        Box(
+            Modifier
+                .clip(CircleShape)
+                .clickable(onClick = onOpenLogin)
+                .padding(2.dp),
+        ) {
+            Avatar(account?.name?.take(1)?.uppercase() ?: "?")
+        }
+    }
+}
+
+/** 令牌过期 / 没登录时挂在启动按钮下面的一条，点一下直接去登录页。 */
+@Composable
+private fun AuthBanner(text: String, needLogin: Boolean, onOpenLogin: () -> Unit, onDismiss: () -> Unit) {
+    val shape = RoundedCornerShape(16.dp)
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(Ui.Surface)
+            .border(1.dp, Ui.Red, shape)
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(text, fontSize = 11.sp, color = Ui.Text, lineHeight = 15.sp, modifier = Modifier.weight(1f))
+        Spacer(Modifier.width(10.dp))
+        if (needLogin) {
+            Text(
+                "去登录",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Medium,
+                color = Ui.Lime,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(10.dp))
+                    .clickable(onClick = onOpenLogin)
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
+            )
+        } else {
+            Text(
+                "知道了",
+                fontSize = 12.sp,
+                color = Ui.TextMuted,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(10.dp))
+                    .clickable(onClick = onDismiss)
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
+            )
+        }
     }
 }
 
@@ -384,7 +477,7 @@ private fun RecommendCard(title: String, onClick: () -> Unit) {
     }
 }
 
-private fun greeting(): String {
+private fun greeting(playerName: String?): String {
     val hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
     val part = when (hour) {
         in 5..10 -> "早上好"
@@ -392,7 +485,7 @@ private fun greeting(): String {
         in 14..18 -> "下午好"
         else -> "晚上好"
     }
-    return "$part，Steve"
+    return "$part，${playerName ?: "Steve"}"
 }
 
 private fun versionReady(context: Context, version: String): Boolean =
